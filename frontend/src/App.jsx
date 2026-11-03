@@ -4,6 +4,9 @@ import { Kepala, Memuat, PesanGalat, Segera, Wajib } from './komponen/umum.jsx';
 import Masuk from './halaman/Masuk.jsx';
 import Kasir from './halaman/crew/Kasir.jsx';
 import Ringkasan from './halaman/owner/Ringkasan.jsx';
+import Bahan from './halaman/owner/Bahan.jsx';
+import Menu from './halaman/owner/Menu.jsx';
+import Pengaturan from './halaman/owner/Pengaturan.jsx';
 
 function Tata({ peran }) {
   return (
@@ -37,9 +40,9 @@ export default function App() {
 
       <Route path="/owner" element={<Tata peran="owner" />}>
         <Route index element={<Ringkasan />} />
-        <Route path="bahan" element={<Segera judul="Bahan" rencana={['Satuan dasar, satuan bantu + konversi', 'Bahan kunci, toleransi, saran toleransi dari riwayat']} />} />
-        <Route path="menu" element={<Segera judul="Menu & resep" rencana={['Resep per ukuran, "1 sendok creamer = 8 gr" tampil langsung', 'Topping dengan resep sendiri']} />} />
-        <Route path="pengaturan" element={<Segera judul="Pengaturan" rencana={['Jumlah & nama shift', 'Hitung kas aktif/tidak, toleransi kas']} />} />
+        <Route path="bahan" element={<Bahan />} />
+        <Route path="menu" element={<Menu />} />
+        <Route path="pengaturan" element={<Pengaturan />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

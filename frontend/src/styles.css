@@ -46,3 +46,47 @@ table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
 th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--garis); vertical-align: top; }
 th { background: var(--latar); font-weight: 600; }
 small { color: var(--redup); }
+
+/* ---------- form & kartu ---------- */
+.judul-aksi { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.judul-aksi h1, .judul-aksi h3 { margin: 0; }
+.subjudul { margin-top: 1.5rem; }
+.kartu { border: 1px solid var(--garis); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: #fff; }
+form.kartu { background: var(--latar); }
+.kisi-kartu { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.75rem; }
+.kartu-menu h3 { font-size: 1rem; }
+.kartu-menu p { margin: 0.5rem 0; }
+fieldset { border: 1px solid var(--garis); border-radius: 6px; padding: 0.75rem; margin: 0 0 1rem; background: #fff; min-width: 0; }
+legend { font-weight: 600; padding: 0 0.25rem; }
+.isian { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.75rem; min-width: 180px; }
+.isian label { font-weight: 600; font-size: 0.9rem; }
+.baris-isian { display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-start; }
+.baris-isian > * { flex: 1 1 200px; }
+.baris-isian > button { flex: 0 0 auto; align-self: flex-end; margin-bottom: 0.75rem; }
+input, select { font: inherit; padding: 0.4rem 0.5rem; border: 1px solid var(--garis); border-radius: 6px; background: #fff; }
+input:disabled { background: var(--latar); color: var(--redup); }
+[aria-invalid='true'] { border-color: var(--galat); outline-color: var(--galat); }
+input.angka { width: 7rem; text-align: right; }
+.baris-satuan { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.baris-satuan small { flex-basis: 100%; }
+.centang { display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.5rem 0; cursor: pointer; }
+.daftar-centang { display: flex; flex-wrap: wrap; gap: 0 1.5rem; }
+.teks-galat { color: var(--galat); }
+.teks-redup { color: var(--redup); }
+tr.redup { color: var(--redup); }
+.aksi { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.aksi .kanan { margin-left: auto; }
+.tombol-utama { padding: 0.5rem 1rem; border: none; background: var(--utama); color: #fff; border-radius: 6px; font-weight: 600; }
+.editor-resep table { margin-bottom: 0.5rem; }
+.editor-resep td { vertical-align: middle; }
+.editor-resep select { max-width: 14rem; }
+.pesan ul { margin: 0.5rem 0 0; padding-left: 1.25rem; }
+
+@media (max-width: 600px) {
+  .isi { padding: 0.75rem; }
+  .isian { min-width: 0; }
+  .baris-isian > * { flex-basis: 100%; }
+  fieldset { padding: 0.5rem; }
+  .editor-resep select { max-width: 9rem; }
+  input.angka { width: 5rem; }
+}

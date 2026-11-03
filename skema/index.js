@@ -125,6 +125,10 @@ export const PengeluaranKasBody = z
   .strict();
 
 // zod issue → detail format API: [{ field, pesan }]
+// Path ditulis sama seperti logika/: ['ukuran', 0, 'resep', 1, 'satuan'] → 'ukuran[0].resep[1].satuan'
 export function keDetail(zodError) {
-  return zodError.issues.map((i) => ({ field: i.path.join('.') || '(body)', pesan: i.message }));
+  return zodError.issues.map((i) => ({
+    field: i.path.reduce((acc, p) => (typeof p === 'number' ? `${acc}[${p}]` : acc ? `${acc}.${p}` : String(p)), '') || '(body)',
+    pesan: i.message,
+  }));
 }

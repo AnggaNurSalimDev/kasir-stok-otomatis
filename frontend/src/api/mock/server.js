@@ -51,13 +51,19 @@ function pemakaiResep(st, bahanId) {
   const hasil = [];
   for (const m of st.menu) {
     for (const u of m.ukuran) {
-      for (const r of u.resep) if (r.bahanId === bahanId) hasil.push({ label: `${m.nama} ${u.nama}`, satuan: r.satuan });
+      for (const r of u.resep) if (r.bahanId === bahanId) hasil.push({ label: `${m.nama} ${u.nama}`, menu: m.nama, satuan: r.satuan });
     }
   }
   for (const t of st.topping) {
-    for (const r of t.resep) if (r.bahanId === bahanId) hasil.push({ label: `topping ${t.nama}`, satuan: r.satuan });
+    for (const r of t.resep) if (r.bahanId === bahanId) hasil.push({ label: `topping ${t.nama}`, menu: `topping ${t.nama}`, satuan: r.satuan });
   }
   return hasil;
+}
+
+// "Thai Tea Regular, Thai Tea Large, Coklat Regular, ..." → "Thai Tea, Coklat, Kopi Susu, dan 4 lainnya"
+function ringkasPemakai(pakai, maks = 3) {
+  const nama = [...new Set(pakai.map((p) => p.menu))];
+  return nama.length <= maks ? nama.join(', ') : `${nama.slice(0, maks).join(', ')}, dan ${nama.length - maks} lainnya`;
 }
 
 // Toleransi minimum efektif (×10). null = otomatis, mengikuti ketelitian hitung fisik yang umum:
@@ -122,7 +128,7 @@ function tampilBahan(st, b, peran) {
     toleransiPersen: b.toleransiPersen,
     toleransiMinimum: H(toleransiMinimumX10(b)),
     toleransiMinimumOtomatis: b.toleransiMinimumX10 === null,
-    dipakaiDi: pemakaiResep(st, b.id).map((p) => p.label),
+    dipakaiDi: [...new Set(pemakaiResep(st, b.id).map((p) => p.menu))],
     saranToleransi: saranToleransi(riwayatSelisih(st, b.id)),
   };
 }
@@ -331,7 +337,7 @@ daftar('PUT', '/bahan/:id', OWNER, S.BahanBody, ({ st, body, params }) => {
   const namaBaru = new Set([baru.satuanDasar, ...baru.satuanBantu.map((s) => s.nama)].map((n) => n.trim().toLowerCase()));
   const rusak = pemakaiResep(st, lama.id).filter((p) => !namaBaru.has(p.satuan.trim().toLowerCase()));
   if (rusak.length) {
-    throw konflik(`Satuan "${rusak[0].satuan}" masih dipakai di ${rusak.map((r) => r.label).join(', ')}. Ubah resepnya dulu.`);
+    throw konflik(`Satuan "${rusak[0].satuan}" masih dipakai di ${ringkasPemakai(rusak)}. Ubah resepnya dulu.`);
   }
   Object.assign(lama, baru, { id: lama.id });
   return tampilBahan(st, lama, 'owner');
@@ -342,7 +348,7 @@ daftar('PATCH', '/bahan/:id/arsip', OWNER, S.ArsipBody, ({ st, body, params }) =
   if (!b) throw tidakAda('Bahan');
   if (body.arsip) {
     const pakai = pemakaiResep(st, b.id);
-    if (pakai.length) throw konflik(`Bahan masih dipakai di ${pakai.map((p) => p.label).join(', ')}. Hapus dari resep dulu.`);
+    if (pakai.length) throw konflik(`Bahan masih dipakai di ${ringkasPemakai(pakai)}. Hapus dari resep dulu.`);
   }
   b.arsip = body.arsip;
   return tampilBahan(st, b, 'owner');
