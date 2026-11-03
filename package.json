@@ -23,5 +23,8 @@
     "react-router-dom": "^6.30.6",
     "zod": "^3.25.76"
   },
-  "private": true
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  }
 }
