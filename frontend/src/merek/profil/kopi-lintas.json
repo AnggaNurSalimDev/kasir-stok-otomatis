@@ -1,0 +1,16 @@
+{
+  "id": "kopi-lintas",
+  "nama": "Kopi Lintas",
+  "fiktif": true,
+  "data": "kopi",
+  "logo": { "teks": "KOPI LINTAS", "gambar": "/merek/kopi-lintas.svg" },
+  "favicon": "/merek/kopi-lintas.svg",
+  "warna": { "utama": "#e0a96d", "aksen": "#2b1d14" },
+  "huruf": "grotesk",
+  "gaya": { "tema": "gelap", "sudut": "tajam", "kerapatan": "rapat" },
+  "teks": {
+    "slogan": "Espresso bar dan pastry. Satu shot = 18 gram, satu croissant = 1 pcs; kasir yang menghitungnya.",
+    "alamat": "Jl. Braga 5, Bandung",
+    "footerStruk": "Selamat menikmati."
+  }
+}

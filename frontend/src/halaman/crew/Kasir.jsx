@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSesi } from '../../sesi/SesiContext.jsx';
+import { useProfil } from '../../merek/ProfilContext.jsx';
 import { useData } from '../../komponen/useData.js';
 import { Memuat, Pesan, PesanGalat } from '../../komponen/umum.jsx';
 import { RingkasanGalat, useKirim } from '../../komponen/form.jsx';
@@ -132,6 +133,7 @@ function Bayar({ totalTampil, onBayar, onKembali, kirim }) {
 }
 
 function Struk({ struk, onBaru }) {
+  const { profil } = useProfil();
   const tombol = useRef(null);
   useEffect(() => tombol.current?.focus(), []);
   return (
@@ -144,7 +146,11 @@ function Struk({ struk, onBaru }) {
         </Pesan>
       )}
       <div className="struk" aria-label="Struk">
-        <p className="tengah"><strong>Kasir Stok Otomatis</strong><br /><small>{new Date(struk.pada).toLocaleString('id-ID')} · {struk.kasir}</small></p>
+        <p className="tengah">
+          <strong>{profil.nama}</strong>
+          {profil.teks.alamat && <><br /><small>{profil.teks.alamat}</small></>}
+          <br /><small>{new Date(struk.pada).toLocaleString('id-ID')} · {struk.kasir}</small>
+        </p>
         <table>
           <tbody>
             {struk.item.map((it, i) => (
@@ -167,7 +173,7 @@ function Struk({ struk, onBaru }) {
             )}
           </tbody>
         </table>
-        <p className="tengah"><small>No. {struk.id}</small></p>
+        <p className="tengah">{profil.teks.footerStruk}<br /><small>No. {struk.id}</small></p>
       </div>
       <button ref={tombol} type="button" className="tombol-utama tombol-lebar" onClick={onBaru}>Transaksi baru</button>
     </div>

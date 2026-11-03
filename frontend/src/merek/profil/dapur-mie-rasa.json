@@ -1,0 +1,16 @@
+{
+  "id": "dapur-mie-rasa",
+  "nama": "Dapur Mie Rasa",
+  "fiktif": true,
+  "data": "mie",
+  "logo": { "teks": "Dapur Mie Rasa", "gambar": "/merek/dapur-mie-rasa.svg" },
+  "favicon": "/merek/dapur-mie-rasa.svg",
+  "warna": { "utama": "#0f5e57", "aksen": "#fcd34d" },
+  "huruf": "fraunces",
+  "gaya": { "tema": "terang", "sudut": "sedang", "kerapatan": "lega" },
+  "teks": {
+    "slogan": "Mie ayam, bakso, dan es teh. Ayam dihitung per porsi, telur per butir, pangsit per lembar.",
+    "alamat": "Jl. Gegerkalong 7, Bandung",
+    "footerStruk": "Hatur nuhun, mangga sumping deui."
+  }
+}

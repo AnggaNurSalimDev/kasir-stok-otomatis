@@ -1,0 +1,16 @@
+{
+  "id": "teh-senja",
+  "nama": "Teh Senja",
+  "fiktif": true,
+  "data": "teh",
+  "logo": { "teks": "Teh Senja", "gambar": "/merek/teh-senja.svg" },
+  "favicon": "/merek/teh-senja.svg",
+  "warna": { "utama": "#9a3412", "aksen": "#fed7aa" },
+  "huruf": "jakarta",
+  "gaya": { "tema": "terang", "sudut": "bulat", "kerapatan": "normal" },
+  "teks": {
+    "slogan": "Thai tea, green tea, dan kopi susu. Takaran tiap gelas tercatat, stok berkurang sendiri.",
+    "alamat": "Jl. Cihampelas 12, Bandung",
+    "footerStruk": "Terima kasih, sampai jumpa sore nanti!"
+  }
+}

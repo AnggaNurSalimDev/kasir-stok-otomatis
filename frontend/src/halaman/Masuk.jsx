@@ -2,9 +2,11 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { useSesi, berandaPeran } from '../sesi/SesiContext.jsx';
 import { useData } from '../komponen/useData.js';
 import { Memuat, Pesan, PesanGalat } from '../komponen/umum.jsx';
+import { PengalihProfil, useProfil } from '../merek/ProfilContext.jsx';
 
 export default function Masuk() {
   const { pengguna, masuk, mode } = useSesi();
+  const { profil } = useProfil();
   const navigate = useNavigate();
   const { data, galat, memuat, muatUlang } = useData(pengguna ? null : '/pengguna');
 
@@ -18,9 +20,16 @@ export default function Masuk() {
 
   return (
     <main className="halaman-masuk">
-      <h1>Kasir Stok Otomatis</h1>
-      <p>Stok bahan berkurang otomatis sesuai resep, apa pun satuannya: gram, ml, sendok, garis gelas, atau pcs.</p>
-      {mode === 'mock' && <Pesan>Demo: pilih nama untuk masuk, tanpa password. Data tersimpan di browser ini.</Pesan>}
+      <div className="kepala-masuk">
+        {profil.logo.gambar && <img src={profil.logo.gambar} alt="" />}
+        <h1>{profil.nama}</h1>
+      </div>
+      <p>{profil.teks.slogan}</p>
+      {mode === 'mock' && (
+        <Pesan>
+          Demo kasir dengan stok otomatis{profil.fiktif ? ` · ${profil.nama} adalah usaha fiktif` : ''}. Pilih nama untuk masuk, tanpa password. Data 30 hari terakhir tersimpan di browser ini.
+        </Pesan>
+      )}
       {memuat && <Memuat />}
       <PesanGalat galat={galat} ulangi={muatUlang} />
       {data && (
@@ -41,6 +50,7 @@ export default function Masuk() {
           </section>
         </div>
       )}
+      <PengalihProfil />
     </main>
   );
 }

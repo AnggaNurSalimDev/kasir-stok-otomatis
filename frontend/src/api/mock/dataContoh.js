@@ -1,127 +1,37 @@
 // Data contoh untuk demo. Semua angka contoh, bukan ukuran asli dari usaha mana pun.
 //
-// Katalog (bahan, menu, topping) ditulis langsung. Riwayat shift dibuat lewat mock API itu sendiri,
-// supaya selisih, toleransi, dan kas dihitung oleh kode yang sama dengan pemakaian sungguhan.
+// Katalog (bahan, menu, topping) ditulis di katalog/<usaha>.js. Riwayat shift dibuat lewat
+// mock API itu sendiri, supaya selisih, toleransi, dan kas dihitung oleh kode yang sama
+// dengan pemakaian sungguhan.
+//
+//   katalog/<usaha>.js ──buatKatalog──▶ state kosong (stok 0, tanpa riwayat)
+//                                           │
+//          buatDataDemo: simulasi hari demi hari lewat api.panggil(...)
+//          (stok "fisik" disimulasikan terpisah; crew menghitungnya saat buka/tutup shift)
+//                                           ▼
+//                                 state lengkap 30 hari
 
 import { buatMockApi } from './server.js';
-import { penyimpananMemori } from './penyimpanan.js';
+import { penyimpananObjek } from './penyimpanan.js';
+import { KATALOG } from './katalog/index.js';
 
-// ---------------------------------------------------------------------------
-// Katalog
-// ---------------------------------------------------------------------------
+const MODAL_LACI = 200000;
+// Satuan yang dihitung pas (tidak ada takaran yang meleset).
+const SATUAN_HITUNGAN = new Set(['pcs', 'keping', 'butir', 'lembar', 'buah']);
 
-const sb = (nama, konversi) => ({ nama, konversi });
-const bahan = (id, nama, satuanDasar, satuanBantu, batasMinimum, bahanKunci = false) => ({
-  id, nama, satuanDasar, satuanBantu,
-  batasMinimumX10: batasMinimum * 10,
-  bahanKunci,
-  toleransiPersen: 5,
-  toleransiMinimumX10: null, // otomatis: mengikuti ketelitian hitung per satuan dasar
-  arsip: false,
-});
-
-const BAHAN = [
-  bahan('creamer', 'Creamer bubuk', 'gr', [sb('sendok', 8), sb('kaleng', 1000)], 500, true),
-  bahan('gula', 'Gula pasir', 'gr', [sb('sdt', 8), sb('karung', 25000)], 2000),
-  bahan('airThaiTea', 'Air thai tea', 'ml', [sb('garis bawah', 150), sb('garis atas', 220), sb('teko', 2000)], 1500, true),
-  bahan('airGreenTea', 'Air green thai tea', 'ml', [sb('garis bawah', 150), sb('garis atas', 220), sb('teko', 2000)], 1500, true),
-  bahan('creamerCair', 'Creamer cair', 'ml', [sb('botol', 1000)], 500),
-  bahan('susuCair', 'Susu cair', 'ml', [sb('kotak', 1000)], 1000),
-  bahan('bubukCoklat', 'Bubuk coklat', 'gr', [sb('sendok', 10), sb('bungkus', 1000)], 300, true),
-  bahan('bubukMatcha', 'Bubuk matcha', 'gr', [sb('sendok', 5), sb('bungkus', 500)], 150, true),
-  bahan('bijiKopi', 'Biji kopi', 'gr', [sb('shot', 18), sb('bungkus', 1000)], 300, true),
-  bahan('sirupAren', 'Sirup gula aren', 'ml', [sb('pump', 10), sb('botol', 750)], 300),
-  bahan('arenJelly', 'Aren jelly', 'gr', [sb('wadah', 1000)], 300),
-  bahan('boba', 'Boba', 'gr', [sb('sendok sayur', 40), sb('bungkus', 1000)], 400),
-  // Satuan dasar non-standar: dihitung per keping.
-  bahan('oreo', 'Biskuit oreo', 'keping', [sb('bungkus', 12)], 24),
-  bahan('cup', 'Cup', 'pcs', [sb('slop', 50)], 50, true),
-];
-
-const r = (bahanId, jumlah, satuan) => ({ bahanId, jumlah, satuan });
-const cup = r('cup', 1, 'pcs');
-
-const MENU = [
-  {
-    id: 'thaiTea', nama: 'Thai Tea', kategori: 'Teh', toppingIds: ['tpArenJelly', 'tpBoba', 'tpExtraCreamer'],
-    ukuran: [
-      { nama: 'Regular', harga: 12000, resep: [r('creamer', 1, 'sendok'), r('gula', 1, 'sdt'), r('airThaiTea', 1, 'garis bawah'), r('creamerCair', 20, 'ml'), cup] },
-      { nama: 'Large', harga: 15000, resep: [r('creamer', 1.5, 'sendok'), r('gula', 1, 'sdt'), r('airThaiTea', 1, 'garis atas'), r('creamerCair', 30, 'ml'), cup] },
-    ],
-  },
-  {
-    id: 'greenThaiTea', nama: 'Green Thai Tea', kategori: 'Teh', toppingIds: ['tpArenJelly', 'tpBoba'],
-    ukuran: [
-      { nama: 'Regular', harga: 13000, resep: [r('creamer', 1, 'sendok'), r('gula', 1, 'sdt'), r('airGreenTea', 1, 'garis bawah'), r('creamerCair', 20, 'ml'), cup] },
-      { nama: 'Large', harga: 16000, resep: [r('creamer', 1.5, 'sendok'), r('gula', 1, 'sdt'), r('airGreenTea', 1, 'garis atas'), r('creamerCair', 30, 'ml'), cup] },
-    ],
-  },
-  {
-    id: 'coklat', nama: 'Coklat', kategori: 'Non-kopi', toppingIds: ['tpBoba', 'tpOreo'],
-    ukuran: [
-      { nama: 'Regular', harga: 14000, resep: [r('bubukCoklat', 2, 'sendok'), r('gula', 1, 'sdt'), r('susuCair', 150, 'ml'), cup] },
-      { nama: 'Large', harga: 17000, resep: [r('bubukCoklat', 3, 'sendok'), r('gula', 1, 'sdt'), r('susuCair', 220, 'ml'), cup] },
-    ],
-  },
-  {
-    id: 'matchaLatte', nama: 'Matcha Latte', kategori: 'Non-kopi', toppingIds: ['tpBoba'],
-    ukuran: [
-      { nama: 'Regular', harga: 18000, resep: [r('bubukMatcha', 2, 'sendok'), r('gula', 1, 'sdt'), r('susuCair', 150, 'ml'), cup] },
-      { nama: 'Large', harga: 22000, resep: [r('bubukMatcha', 3, 'sendok'), r('gula', 1, 'sdt'), r('susuCair', 220, 'ml'), cup] },
-    ],
-  },
-  {
-    id: 'kopiSusu', nama: 'Kopi Susu', kategori: 'Kopi', toppingIds: ['tpExtraShot', 'tpArenJelly'],
-    ukuran: [
-      { nama: 'Regular', harga: 15000, resep: [r('bijiKopi', 1, 'shot'), r('susuCair', 120, 'ml'), r('creamerCair', 15, 'ml'), r('gula', 1, 'sdt'), cup] },
-      { nama: 'Large', harga: 19000, resep: [r('bijiKopi', 2, 'shot'), r('susuCair', 180, 'ml'), r('creamerCair', 20, 'ml'), r('gula', 1, 'sdt'), cup] },
-    ],
-  },
-  {
-    id: 'kopiSusuAren', nama: 'Kopi Susu Aren', kategori: 'Kopi', toppingIds: ['tpExtraShot', 'tpArenJelly'],
-    ukuran: [
-      { nama: 'Regular', harga: 17000, resep: [r('bijiKopi', 1, 'shot'), r('susuCair', 120, 'ml'), r('sirupAren', 2, 'pump'), cup] },
-      { nama: 'Large', harga: 21000, resep: [r('bijiKopi', 2, 'shot'), r('susuCair', 180, 'ml'), r('sirupAren', 3, 'pump'), cup] },
-    ],
-  },
-  {
-    id: 'americano', nama: 'Americano', kategori: 'Kopi', toppingIds: ['tpExtraShot'],
-    ukuran: [{ nama: 'Regular', harga: 13000, resep: [r('bijiKopi', 1, 'shot'), cup] }],
-  },
-  {
-    id: 'coklatOreo', nama: 'Coklat Oreo', kategori: 'Non-kopi', toppingIds: ['tpBoba'],
-    ukuran: [
-      { nama: 'Regular', harga: 17000, resep: [r('bubukCoklat', 2, 'sendok'), r('susuCair', 150, 'ml'), r('oreo', 2, 'keping'), cup] },
-      { nama: 'Large', harga: 21000, resep: [r('bubukCoklat', 3, 'sendok'), r('susuCair', 220, 'ml'), r('oreo', 3, 'keping'), cup] },
-    ],
-  },
-];
-
-const TOPPING = [
-  { id: 'tpArenJelly', nama: 'Aren Jelly', harga: 3000, resep: [r('arenJelly', 50, 'gr')] },
-  { id: 'tpBoba', nama: 'Boba', harga: 3000, resep: [r('boba', 1, 'sendok sayur')] },
-  { id: 'tpExtraCreamer', nama: 'Extra Creamer', harga: 2000, resep: [r('creamer', 0.5, 'sendok')] },
-  { id: 'tpExtraShot', nama: 'Extra Shot', harga: 5000, resep: [r('bijiKopi', 1, 'shot')] },
-  { id: 'tpOreo', nama: 'Oreo Crumble', harga: 4000, resep: [r('oreo', 2, 'keping')] },
-];
-
-const PENGGUNA = [
-  { id: 'owner', nama: 'Pak Budi (owner)', peran: 'owner' },
-  { id: 'rina', nama: 'Rina', peran: 'crew' },
-  { id: 'dimas', nama: 'Dimas', peran: 'crew' },
-  { id: 'sari', nama: 'Sari', peran: 'crew' },
-];
-
-export function buatKatalog() {
+export function buatKatalog(usaha = 'teh') {
+  const k = KATALOG[usaha];
+  if (!k) throw new TypeError(`Jenis usaha tidak dikenal: ${usaha}`);
   return {
-    versi: 1,
+    versi: 2,
+    usaha,
     urut: 0,
-    pengguna: structuredClone(PENGGUNA),
-    bahan: structuredClone(BAHAN),
-    menu: structuredClone(MENU),
-    topping: structuredClone(TOPPING),
+    pengguna: structuredClone(k.pengguna),
+    bahan: structuredClone(k.bahan),
+    menu: structuredClone(k.menu),
+    topping: structuredClone(k.topping),
     pengaturan: { shift: [{ nama: 'Pagi' }, { nama: 'Sore' }], hitungKas: true, toleransiKasRupiah: 0, zonaWaktu: 'Asia/Jakarta' },
-    stok: Object.fromEntries(BAHAN.map((b) => [b.id, 0])),
+    stok: Object.fromEntries(k.bahan.map((b) => [b.id, 0])),
     shift: [],
     transaksi: [],
     barangMasuk: [],
@@ -130,10 +40,6 @@ export function buatKatalog() {
     opname: [],
   };
 }
-
-// ---------------------------------------------------------------------------
-// Generator riwayat (deterministik)
-// ---------------------------------------------------------------------------
 
 // Pembangkit acak berbenih tetap (mulberry32): hasil sama setiap dijalankan.
 function acakBerbenih(benih) {
@@ -147,148 +53,181 @@ function acakBerbenih(benih) {
   };
 }
 
-// Jam Asia/Jakarta (UTC+7) → Date. hari = 0 untuk tanggal `mulai`.
+// Tanggal `mulai` + `hari`, jam WIB (UTC+7) → Date.
 function jamJakarta(mulai, hari, jam, menit = 0) {
-  const d = new Date(Date.UTC(mulai.getUTCFullYear(), mulai.getUTCMonth(), mulai.getUTCDate() + hari, jam - 7, menit));
-  return d;
+  return new Date(Date.UTC(mulai.getUTCFullYear(), mulai.getUTCMonth(), mulai.getUTCDate() + hari, jam - 7, menit));
 }
 
 // Kejadian khusus per indeks shift (0 = hari pertama Pagi), supaya demo punya contoh setiap kasus.
-const KHUSUS = {
-  2: { salahInputGula: true },               // barang masuk gula 2 karung, lalu dikoreksi −1 karung
-  4: { boros: { creamer: 0.15 } },            // creamer jauh lebih boros → perlu dicek
-  5: { kasHilang: 5000 },                     // kembalian salah → selisih kas
-  7: { takaranKurang: 0.08 },                 // takaran kurang dari resep → selisih positif
-  9: { tidakDitutup: true },                  // crew lupa tutup shift
-};
-const HILANG_MALAM = { 5: { bubukCoklat: 500 } }; // ×10: 50 gr hilang antara tutup malam dan buka pagi (setelah shift ke-5)
+// Bahan yang terlibat diambil dari katalog.kejadian.
+function jadwalKejadian(jumlahShift) {
+  const jadwal = {};
+  const pasang = (i, k) => {
+    // Data pendek (test) tetap memuat semua kasus: indeks dipotong ke shift terakhir yang ditutup.
+    const j = Math.min(i, jumlahShift - 2);
+    jadwal[j] = { ...jadwal[j], ...k };
+  };
+  pasang(6, { salahInput: true });
+  pasang(9, { boros: 0.15 });
+  pasang(11, { kasHilang: 5000 });
+  pasang(15, { hilangMalam: true });
+  pasang(21, { takaranKurang: 0.08 });
+  pasang(27, { tidakDitutup: true });
+  pasang(44, { boros: 0.12 });
+  return jadwal;
+}
 
-export function buatDataDemo({ sekarang = new Date(), hari = 6, benih = 2026 } = {}) {
+/**
+ * @param {{ sekarang?: Date, hari?: number, benih?: number, usaha?: keyof KATALOG }} opsi
+ * @returns {Promise<object>} state mock lengkap
+ */
+export async function buatDataDemo({ sekarang = new Date(), hari = 30, benih = 2026, usaha = 'teh' } = {}) {
+  if (!Number.isInteger(hari) || hari < 4) throw new RangeError('hari minimal 4 supaya semua kasus muat');
+  const K = KATALOG[usaha];
+  if (!K) throw new TypeError(`Jenis usaha tidak dikenal: ${usaha}`);
+
   const acak = acakBerbenih(benih);
   const pilih = (arr) => arr[Math.floor(acak() * arr.length)];
   const antara = (a, b) => a + Math.floor(acak() * (b - a + 1));
 
-  const memori = penyimpananMemori();
+  // Mode cepat: state dipegang sebagai objek (tanpa JSON) dan tidak disalin per panggilan.
+  // Aman di sini karena galat apa pun saat membuat data demo adalah bug dan langsung dilempar.
+  const memori = penyimpananObjek();
   let jam = new Date(sekarang);
-  const api = buatMockApi({ penyimpanan: memori, buatDataAwal: buatKatalog, jedaMs: [0, 0], sekarang: () => jam });
-  const st = () => JSON.parse(memori.baca());
+  const api = buatMockApi({ penyimpanan: memori, buatDataAwal: () => buatKatalog(usaha), jedaMs: [0, 0], sekarang: () => jam, salin: false });
+  const st = () => memori.bacaObjek();
   const panggil = async (alamat, method, body, penggunaId) => (await api.panggil(alamat, { method, body, penggunaId })).data;
+  const maju = (menit) => (jam = new Date(jam.getTime() + menit * 60000));
 
-  // Hari pertama = `hari` hari sebelum hari ini (tanggal Jakarta).
   const hariIni = jamJakarta(sekarang, 0, 0);
   const mulai = new Date(hariIni.getTime() - hari * 86400000 + 7 * 3600000);
 
-  // Stok fisik yang "sebenarnya" ada di dapur (×10). Sistem tidak tahu angka ini;
-  // crew menghitungnya saat buka/tutup shift.
-  const fisik = {
-    creamer: 30000, gula: 250000, airThaiTea: 40000, airGreenTea: 30000, creamerCair: 20000, susuCair: 40000,
-    bubukCoklat: 15000, bubukMatcha: 5000, bijiKopi: 20000, sirupAren: 7500, arenJelly: 20000, boba: 20000,
-    oreo: 480, cup: 2000,
-  };
-  const MODAL_LACI = 200000;
+  // Stok fisik "sebenarnya" di dapur (×10). Sistem tidak tahu angka ini.
+  const fisik = Object.fromEntries(Object.entries(K.fisikAwal).map(([id, n]) => [id, Math.round(n * 10)]));
   let kasLaci = MODAL_LACI;
+  const pakaiTerakhir = {}; // ×10, pemakaian satu shift terbesar sejauh ini, per bahan
   const hitung = (ids) => Object.fromEntries(ids.map((id) => [id, Math.round(fisik[id] / 10)])); // dihitung per 1 satuan
 
-  const urutanSatuanBeli = (b) => [...b.satuanBantu].sort((x, y) => y.konversi - x.konversi)[0];
+  const crew = K.pengguna.filter((p) => p.peran === 'crew').map((p) => p.id);
+  const satuanBeli = (b) => [...b.satuanBantu].sort((x, y) => y.konversi - x.konversi)[0];
 
-  const jalankan = async () => {
-    // Opname awal oleh owner, supaya semua bahan punya stok sistem.
-    jam = jamJakarta(mulai, 0, 6, 30);
-    await panggil('/opname', 'POST', { hitungan: hitung(Object.keys(fisik)) }, 'owner');
+  // Opname awal oleh owner, supaya semua bahan punya stok sistem.
+  jam = jamJakarta(mulai, 0, 6, 30);
+  await panggil('/opname', 'POST', { hitungan: hitung(Object.keys(fisik)) }, 'owner');
 
-    const crew = ['rina', 'dimas', 'sari'];
-    const jumlahShift = hari * 2 + 1; // + shift Pagi hari ini (dibiarkan terbuka)
-    for (let i = 0; i < jumlahShift; i++) {
-      const d = Math.floor(i / 2);
-      const pagi = i % 2 === 0;
-      const khusus = KHUSUS[i] ?? {};
-      const oleh = pagi ? crew[d % 3] : crew[(d + 1) % 3];
-      const kunci = st().bahan.filter((b) => b.bahanKunci && !b.arsip).map((b) => b.id);
+  const jumlahShift = hari * 2 + 1; // + shift Pagi hari ini (dibiarkan terbuka)
+  const KHUSUS = jadwalKejadian(jumlahShift);
+  const kj = K.kejadian;
 
-      const hariIniTerbuka = i === jumlahShift - 1;
+  for (let i = 0; i < jumlahShift; i++) {
+    const d = Math.floor(i / 2);
+    const pagi = i % 2 === 0;
+    const khusus = KHUSUS[i] ?? {};
+    const hariIniTerbuka = i === jumlahShift - 1;
+    const oleh = pagi ? crew[d % crew.length] : crew[(d + 1) % crew.length];
+    const kunci = st().bahan.filter((b) => b.bahanKunci && !b.arsip).map((b) => b.id);
 
-      // Buka shift. Shift hari ini tidak boleh dibuka di masa depan (demo bisa dibuka jam berapa pun).
-      jam = jamJakarta(mulai, d, pagi ? 7 : 15, antara(0, 10));
-      if (hariIniTerbuka && jam.getTime() > sekarang.getTime() - 60 * 60000) jam = new Date(sekarang.getTime() - 60 * 60000);
-      await panggil('/shift/buka', 'POST', { namaShift: pagi ? 'Pagi' : 'Sore', hitungan: hitung(kunci), kasAwal: kasLaci }, oleh);
+    // Buka shift. Shift hari ini tidak boleh dibuka di masa depan (demo bisa dibuka jam berapa pun).
+    jam = jamJakarta(mulai, d, pagi ? 7 : 15, antara(0, 10));
+    if (hariIniTerbuka && jam.getTime() > sekarang.getTime() - 60 * 60000) jam = new Date(sekarang.getTime() - 60 * 60000);
+    await panggil('/shift/buka', 'POST', { namaShift: pagi ? 'Pagi' : 'Sore', hitungan: hitung(kunci), kasAwal: kasLaci }, oleh);
 
-      // Barang masuk jika fisik menipis
-      const katalog = st();
-      for (const b of katalog.bahan) {
-        if (fisik[b.id] > b.batasMinimumX10 * 2) continue;
-        const beli = urutanSatuanBeli(b);
-        jam = new Date(jam.getTime() + 5 * 60000);
-        if (khusus.salahInputGula && b.id === 'gula') continue; // ditangani di bawah
-        await panggil('/barang-masuk', 'POST', { bahanId: b.id, jumlah: 1, satuan: beli.nama }, oleh);
-        fisik[b.id] += beli.konversi * 10;
-      }
-      if (khusus.salahInputGula) {
-        jam = new Date(jam.getTime() + 5 * 60000);
-        const salah = await panggil('/barang-masuk', 'POST', { bahanId: 'gula', jumlah: 2, satuan: 'karung' }, oleh);
-        fisik.gula += 250000; // yang datang sebenarnya 1 karung
-        jam = new Date(jam.getTime() + 30 * 60000);
-        await panggil('/barang-masuk', 'POST', { bahanId: 'gula', jumlah: -1, satuan: 'karung', koreksiDari: salah.id, alasan: 'Salah ketik, yang datang 1 karung' }, oleh);
-      }
-
-      // Pengeluaran kas sesekali
-      if (acak() < 0.4) {
-        jam = new Date(jam.getTime() + 10 * 60000);
-        await panggil('/pengeluaran-kas', 'POST', { jumlah: 10000, keterangan: 'Beli es batu' }, oleh);
-        kasLaci -= 10000;
-      }
-
-      // Penjualan
-      const jumlahTrx = hariIniTerbuka ? 6 : antara(14, 24);
-      // Transaksi disebar rata sepanjang jam shift (Pagi 07–15, Sore 15–22), dengan sedikit acak.
-      const awalJual = jam.getTime() + 10 * 60000;
-      const akhirShift = jamJakarta(mulai, d, pagi ? 14 : 21, 30).getTime();
-      const akhirJual = hariIniTerbuka ? Math.min(akhirShift, sekarang.getTime() - 2 * 60000) : akhirShift;
-      const jarak = (akhirJual - awalJual) / jumlahTrx;
-      for (let t = 0; t < jumlahTrx; t++) {
-        jam = new Date(awalJual + t * jarak + acak() * jarak * 0.8);
-        const menu = pilih(katalog.menu);
-        const ukuran = pilih(menu.ukuran).nama;
-        const toppingIds = menu.toppingIds.length && acak() < 0.4 ? [pilih(menu.toppingIds)] : [];
-        const item = [{ menuId: menu.id, ukuran, toppingIds, qty: acak() < 0.2 ? 2 : 1 }];
-        const total = item.reduce((a, it) => {
-          const u = menu.ukuran.find((x) => x.nama === it.ukuran);
-          const tp = it.toppingIds.reduce((s, tid) => s + katalog.topping.find((x) => x.id === tid).harga, 0);
-          return a + (u.harga + tp) * it.qty;
-        }, 0);
-        const tunai = acak() < 0.6;
-        const uang = Math.ceil(total / 5000) * 5000 + (acak() < 0.3 ? 5000 : 0);
-        await panggil('/transaksi', 'POST', tunai ? { item, metodeBayar: 'tunai', uangDiterima: uang } : { item, metodeBayar: 'qris' }, oleh);
-        if (tunai) kasLaci += total;
-
-        // Pemakaian fisik = resep × faktor takaran crew (tidak pernah tepat).
-        const trx = st().transaksi.at(-1);
-        for (const [id, x10] of Object.entries(trx.pemakaian)) {
-          let faktor = 1 + acak() * 0.04; // boros 0–4%, wajar
-          if (khusus.boros?.[id]) faktor = 1 + khusus.boros[id];
-          if (khusus.takaranKurang) faktor = 1 - khusus.takaranKurang;
-          if (id === 'cup' || id === 'oreo') faktor = 1; // barang hitungan tidak meleset
-          fisik[id] = Math.max(0, fisik[id] - Math.round(x10 * faktor));
-        }
-      }
-      if (khusus.kasHilang) kasLaci -= khusus.kasHilang;
-      if (hariIniTerbuka) break;
-
-      // Akhir hari: uang disetor ke owner, laci disisakan modal. Dicatat sebagai pengeluaran kas
-      // supaya kas shift berikutnya tetap bisa dibandingkan (serah terima).
-      if (!pagi && !khusus.tidakDitutup && kasLaci > MODAL_LACI) {
-        jam = new Date(jam.getTime() + 10 * 60000);
-        await panggil('/pengeluaran-kas', 'POST', { jumlah: kasLaci - MODAL_LACI, keterangan: 'Setor ke owner' }, oleh);
-        kasLaci = MODAL_LACI;
-      }
-
-      // Tutup shift
-      if (!khusus.tidakDitutup) {
-        jam = new Date(jam.getTime() + 15 * 60000);
-        await panggil('/shift/tutup', 'POST', { hitungan: hitung(kunci), kasAkhir: kasLaci }, oleh);
-      }
-      for (const [id, x10] of Object.entries(HILANG_MALAM[i] ?? {})) fisik[id] = Math.max(0, fisik[id] - x10);
+    // Stok opname mingguan (Pagi hari ke-7, 14, …): semua bahan, termasuk yang bukan bahan kunci.
+    if (pagi && d > 0 && d % 7 === 0 && !hariIniTerbuka) {
+      maju(5);
+      await panggil('/opname', 'POST', { hitungan: hitung(st().bahan.filter((b) => !b.arsip).map((b) => b.id)) }, oleh);
     }
-  };
 
-  return jalankan().then(() => st());
+    // Barang masuk jika fisik tidak cukup untuk satu shift lagi (perkiraan: pemakaian shift terbesar sejauh ini × 1,5).
+    for (const b of st().bahan) {
+      const target = Math.max(b.batasMinimumX10 * 2, Math.round((pakaiTerakhir[b.id] ?? 0) * 1.5));
+      if (fisik[b.id] > target) continue;
+      if (khusus.salahInput && b.id === kj.salahInput.bahanId) continue; // ditangani di bawah
+      const beli = satuanBeli(b);
+      const konversiX10 = Math.round(beli.konversi * 10);
+      const jumlah = Math.max(1, Math.ceil((target * 1.5 - fisik[b.id]) / konversiX10));
+      maju(5);
+      await panggil('/barang-masuk', 'POST', { bahanId: b.id, jumlah, satuan: beli.nama }, oleh);
+      fisik[b.id] += jumlah * konversiX10;
+    }
+    if (khusus.salahInput) {
+      const { bahanId, satuan, alasan } = kj.salahInput;
+      const konversi = st().bahan.find((b) => b.id === bahanId).satuanBantu.find((s) => s.nama === satuan).konversi;
+      maju(5);
+      const salah = await panggil('/barang-masuk', 'POST', { bahanId, jumlah: 2, satuan }, oleh);
+      fisik[bahanId] += Math.round(konversi * 10); // yang datang sebenarnya 1
+      maju(30);
+      await panggil('/barang-masuk', 'POST', { bahanId, jumlah: -1, satuan, koreksiDari: salah.id, alasan }, oleh);
+    }
+
+    // Pengeluaran kas sesekali
+    if (acak() < 0.35) {
+      maju(10);
+      await panggil('/pengeluaran-kas', 'POST', { jumlah: pilih([5000, 10000, 15000]), keterangan: pilih(['Beli es batu', 'Beli gas', 'Parkir kurir', 'Beli plastik']) }, oleh);
+      kasLaci -= st().pengeluaranKas.at(-1).jumlah;
+    }
+
+    // Penjualan, disebar rata sepanjang jam shift (Pagi 07–15, Sore 15–22).
+    const katalog = st();
+    const jumlahTrx = hariIniTerbuka ? 6 : antara(14, 24) + (d % 7 >= 5 ? 6 : 0); // akhir pekan lebih ramai
+    const awalJual = jam.getTime() + 10 * 60000;
+    const akhirShift = jamJakarta(mulai, d, pagi ? 14 : 21, 30).getTime();
+    const akhirJual = hariIniTerbuka ? Math.min(akhirShift, sekarang.getTime() - 2 * 60000) : akhirShift;
+    const jarak = Math.max(0, akhirJual - awalJual) / jumlahTrx;
+    for (let t = 0; t < jumlahTrx; t++) {
+      jam = new Date(awalJual + t * jarak + acak() * jarak * 0.8);
+      const item = [];
+      const jumlahBaris = acak() < 0.3 ? 2 : 1;
+      for (let n = 0; n < jumlahBaris; n++) {
+        const menu = pilih(katalog.menu);
+        const toppingIds = menu.toppingIds.length && acak() < 0.4 ? [pilih(menu.toppingIds)] : [];
+        const baru = { menuId: menu.id, ukuran: pilih(menu.ukuran).nama, toppingIds, qty: acak() < 0.2 ? 2 : 1 };
+        if (!item.some((x) => x.menuId === baru.menuId && x.ukuran === baru.ukuran && x.toppingIds.join() === baru.toppingIds.join())) item.push(baru);
+      }
+      const total = item.reduce((a, it) => {
+        const m = katalog.menu.find((x) => x.id === it.menuId);
+        const tp = it.toppingIds.reduce((s, tid) => s + katalog.topping.find((x) => x.id === tid).harga, 0);
+        return a + (m.ukuran.find((u) => u.nama === it.ukuran).harga + tp) * it.qty;
+      }, 0);
+      const tunai = acak() < 0.55;
+      const uang = Math.ceil(total / 5000) * 5000 + (acak() < 0.3 ? 5000 : 0);
+      await panggil('/transaksi', 'POST', tunai ? { item, metodeBayar: 'tunai', uangDiterima: uang } : { item, metodeBayar: 'qris' }, oleh);
+      if (tunai) kasLaci += total;
+
+      // Pemakaian fisik = resep × faktor takaran crew (tidak pernah tepat).
+      const trx = st().transaksi.at(-1);
+      for (const [id, x10] of Object.entries(trx.pemakaian)) {
+        const satuan = katalog.bahan.find((b) => b.id === id).satuanDasar;
+        let faktor = 1 + acak() * 0.04; // boros 0–4%, wajar
+        if (khusus.boros && id === kj.boros) faktor = 1 + khusus.boros;
+        if (khusus.takaranKurang) faktor = 1 - khusus.takaranKurang;
+        if (SATUAN_HITUNGAN.has(satuan)) faktor = 1; // barang hitungan tidak meleset
+        fisik[id] -= Math.round(x10 * faktor);
+        // Invariant simulasi: dapur tidak bisa memakai bahan yang tidak ada. Jika ini terjadi, restok di atas kurang.
+        if (fisik[id] < 0) throw new Error(`Data demo ${usaha}: stok fisik ${id} habis di shift ${i}; perbesar fisikAwal atau restok`);
+      }
+    }
+    if (khusus.kasHilang) kasLaci -= khusus.kasHilang;
+    const trxShift = st().transaksi.filter((t) => t.shiftId === st().shift.at(-1).id);
+    for (const b of st().bahan) pakaiTerakhir[b.id] = Math.max(pakaiTerakhir[b.id] ?? 0, trxShift.reduce((a, t) => a + (t.pemakaian[b.id] ?? 0), 0));
+    if (hariIniTerbuka) break;
+
+    // Akhir hari: uang disetor ke owner, laci disisakan modal (dicatat sebagai pengeluaran kas).
+    if (!pagi && !khusus.tidakDitutup && kasLaci > MODAL_LACI) {
+      maju(10);
+      await panggil('/pengeluaran-kas', 'POST', { jumlah: kasLaci - MODAL_LACI, keterangan: 'Setor ke owner' }, oleh);
+      kasLaci = MODAL_LACI;
+    }
+
+    if (!khusus.tidakDitutup) {
+      maju(15);
+      await panggil('/shift/tutup', 'POST', { hitungan: hitung(kunci), kasAkhir: kasLaci }, oleh);
+    }
+    if (khusus.hilangMalam) {
+      const { bahanId, jumlah } = kj.hilangMalam;
+      fisik[bahanId] = Math.max(0, fisik[bahanId] - Math.round(jumlah * 10));
+    }
+  }
+
+  return memori.bacaObjek();
 }

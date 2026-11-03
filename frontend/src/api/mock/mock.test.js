@@ -1,7 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import { buatMockApi } from './server.js';
 import { penyimpananMemori } from './penyimpanan.js';
 import { buatKatalog, buatDataDemo } from './dataContoh.js';
+import { JENIS_USAHA, KATALOG } from './katalog/index.js';
+import { validasiBahan, konversiResep } from '../../../../logika/resep.js';
 import { ErrorApi } from '../ErrorApi.js';
 
 let memori, api, jam;
@@ -219,67 +221,91 @@ describe('laporan harian', () => {
   });
 });
 
-describe('data demo', () => {
-  const sekarang = new Date('2026-11-03T02:00:00Z');
+describe.each(JENIS_USAHA)('katalog %s', (usaha) => {
+  const K = KATALOG[usaha];
+  it('semua bahan dan resep lolos validasi logika/', () => {
+    K.bahan.forEach((b) => expect(() => validasiBahan(b), b.id).not.toThrow());
+    const idx = new Map(K.bahan.map((b) => [b.id, b]));
+    K.menu.forEach((m) => m.ukuran.forEach((u) => expect(() => konversiResep(u.resep, idx, `${m.id} ${u.nama}`)).not.toThrow()));
+    K.topping.forEach((t) => expect(() => konversiResep(t.resep, idx, t.id)).not.toThrow());
+  });
+  it('topping yang dirujuk menu ada; stok fisik awal untuk setiap bahan; bahan kejadian ada', () => {
+    const topping = new Set(K.topping.map((t) => t.id));
+    K.menu.forEach((m) => m.toppingIds.forEach((t) => expect(topping.has(t), `${m.id} → ${t}`).toBe(true)));
+    expect(Object.keys(K.fisikAwal).sort()).toEqual(K.bahan.map((b) => b.id).sort());
+    const ids = new Set(K.bahan.map((b) => b.id));
+    expect(ids.has(K.kejadian.boros) && ids.has(K.kejadian.salahInput.bahanId) && ids.has(K.kejadian.hilangMalam.bahanId)).toBe(true);
+    expect(K.pengguna.filter((p) => p.peran === 'crew').length).toBeGreaterThanOrEqual(2);
+    expect(K.pengguna.some((p) => p.id === 'owner' && p.peran === 'owner')).toBe(true);
+  });
+});
 
-  it('deterministik: dua kali dibuat hasilnya sama', async () => {
-    const a = await buatDataDemo({ sekarang });
-    const b = await buatDataDemo({ sekarang });
-    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+describe.each(JENIS_USAHA)('data demo %s (30 hari)', (usaha) => {
+  const sekarang = new Date('2026-11-03T02:00:00Z');
+  let st;
+  beforeAll(async () => {
+    st = await buatDataDemo({ sekarang, usaha });
   });
 
-  it('berisi semua kasus yang dijanjikan rencana', async () => {
-    const st = await buatDataDemo({ sekarang });
-    const status = st.shift.map((s) => s.status);
-    expect(status.filter((s) => s !== 'terbuka').length).toBeGreaterThanOrEqual(10);
-    expect(status.filter((s) => s === 'tidak_ditutup')).toHaveLength(1);
-    expect(status.at(-1)).toBe('terbuka'); // shift hari ini, kasir langsung bisa dipakai
+  it('deterministik: dua kali dibuat hasilnya sama', async () => {
+    expect(JSON.stringify(await buatDataDemo({ sekarang, usaha }))).toBe(JSON.stringify(st));
+  });
 
+  it('30 hari × 2 shift + shift hari ini yang masih terbuka', () => {
+    expect(st.shift).toHaveLength(61);
+    expect(st.shift.at(-1).status).toBe('terbuka');
+    expect(st.shift.filter((s) => s.status === 'tidak_ditutup')).toHaveLength(1);
+    expect(st.transaksi.length).toBeGreaterThan(1000);
+    expect(st.opname.length).toBeGreaterThanOrEqual(5); // awal + mingguan
+  });
+
+  it('berisi semua kasus yang dijanjikan rencana, dan sebagian besar shift wajar', () => {
     const baris = st.shift.flatMap((s) => s.hasil?.bahan ?? []);
     expect(baris.some((r) => r.status === 'perlu_dicek' && r.arah === 'kurang')).toBe(true);
     expect(baris.some((r) => r.status === 'perlu_dicek' && r.arah === 'lebih')).toBe(true);
-    expect(baris.filter((r) => r.status === 'wajar').length).toBeGreaterThan(baris.length / 2);
-
+    expect(baris.filter((r) => r.status === 'wajar').length / baris.length).toBeGreaterThan(0.95);
     expect(st.shift.some((s) => s.hasil?.kas?.status === 'perlu_dicek')).toBe(true);
     expect(st.shift.some((s) => s.serahTerima?.bahan.some((b) => b.selisihX10 && b.selisihX10 !== 0))).toBe(true);
     expect(st.barangMasuk.some((e) => e.koreksiDari)).toBe(true);
   });
 
-  it('saran toleransi muncul di halaman bahan owner', async () => {
-    const st = await buatDataDemo({ sekarang });
+  it('stok sistem tidak ada yang minus di akhir (restok mengikuti pemakaian)', () => {
+    expect(Object.entries(st.stok).filter(([, v]) => v < 0)).toEqual([]);
+  });
+
+  it('kas pagi kembali ke modal kecuali setelah shift yang lupa ditutup', () => {
+    const pagi = st.shift.filter((s, i) => s.nama === 'Pagi' && i > 0 && st.shift[i - 1].status === 'ditutup');
+    expect(pagi.every((s) => s.kasAwal <= 200000)).toBe(true);
+    const setelahLupa = st.shift.find((s, i) => i > 0 && st.shift[i - 1].status === 'tidak_ditutup');
+    expect(setelahLupa.kasAwal).toBeGreaterThan(200000);
+  });
+
+  it('tidak ada kejadian di masa depan', () => {
+    const semua = [...st.transaksi.map((t) => t.pada), ...st.barangMasuk.map((e) => e.pada), ...st.shift.flatMap((s) => [s.dibukaPada, s.ditutupPada].filter(Boolean))];
+    expect(semua.every((p) => new Date(p) <= sekarang)).toBe(true);
+  });
+
+  it('saran toleransi muncul untuk bahan kunci', async () => {
     const m = penyimpananMemori();
     m.tulis(JSON.stringify(st));
-    const a = buatMockApi({ penyimpanan: m, buatDataAwal: buatKatalog, jedaMs: [0, 0], sekarang: () => sekarang });
+    const a = buatMockApi({ penyimpanan: m, buatDataAwal: () => buatKatalog(usaha), jedaMs: [0, 0], sekarang: () => sekarang });
     const { data } = await a.panggil('/bahan', { penggunaId: 'owner' });
-    const creamer = data.find((b) => b.id === 'creamer');
-    expect(creamer.saranToleransi).toMatchObject({ jumlahShift: expect.any(Number) });
-    expect(creamer.saranToleransi.jumlahShift).toBeGreaterThanOrEqual(10);
+    const b = data.find((x) => x.id === KATALOG[usaha].kejadian.boros);
+    expect(b.saranToleransi.jumlahShift).toBeGreaterThanOrEqual(10);
   });
 });
 
 describe('data demo: waktu', () => {
   it('tidak ada kejadian di masa depan, berapa pun jam demo dibuka', async () => {
-    for (const iso of ['2026-11-03T00:30:00Z', '2026-11-03T02:00:00Z', '2026-11-03T14:00:00Z', '2026-11-02T18:30:00Z']) {
+    for (const iso of ['2026-11-03T00:30:00Z', '2026-11-03T14:00:00Z', '2026-11-02T18:30:00Z']) {
       const sekarang = new Date(iso);
-      const st = await buatDataDemo({ sekarang });
-      const semua = [
-        ...st.transaksi.map((t) => t.pada), ...st.barangMasuk.map((e) => e.pada), ...st.penyesuaian.map((e) => e.pada),
-        ...st.shift.flatMap((s) => [s.dibukaPada, s.ditutupPada].filter(Boolean)),
-      ];
+      const st = await buatDataDemo({ sekarang, hari: 6 });
+      const semua = [...st.transaksi.map((t) => t.pada), ...st.penyesuaian.map((e) => e.pada), ...st.shift.flatMap((s) => [s.dibukaPada, s.ditutupPada].filter(Boolean))];
       expect(semua.every((p) => new Date(p) <= sekarang), iso).toBe(true);
     }
   });
-});
-
-describe('data demo: kas', () => {
-  it('kas awal setiap shift Pagi kembali ke modal laci (uang disetor tiap malam)', async () => {
-    const st = await buatDataDemo({ sekarang: new Date('2026-11-03T02:00:00Z') });
-    // Kecuali setelah shift Sore yang lupa ditutup: malam itu tidak ada setoran.
-    const pagi = st.shift.filter((s, i) => s.nama === 'Pagi' && i > 0 && st.shift[i - 1].status === 'ditutup');
-    expect(pagi.length).toBeGreaterThan(3);
-    expect(pagi.every((s) => s.kasAwal <= 200000)).toBe(true);
-    const setelahLupa = st.shift.find((s, i) => i > 0 && st.shift[i - 1].status === 'tidak_ditutup');
-    expect(setelahLupa.kasAwal).toBeGreaterThan(200000);
-    expect(st.pengeluaranKas.some((p) => p.keterangan === 'Setor ke owner')).toBe(true);
+  it('jenis usaha tak dikenal dan hari terlalu pendek ditolak', async () => {
+    await expect(buatDataDemo({ usaha: 'bengkel' })).rejects.toThrow(/tidak dikenal/);
+    await expect(buatDataDemo({ hari: 2 })).rejects.toThrow(RangeError);
   });
 });

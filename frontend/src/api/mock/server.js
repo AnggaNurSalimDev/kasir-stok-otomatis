@@ -642,21 +642,39 @@ function periksaRespons(data, peran) {
   jalan(data, 'data');
 }
 
-export function buatMockApi({ penyimpanan, buatDataAwal, jedaMs = [300, 800], acak = Math.random, sekarang = () => new Date() }) {
+const VERSI_DATA = 2;
+
+// salin = false: state diubah langsung tanpa disalin (tidak atomik). Hanya untuk pembuat data demo.
+export function buatMockApi({ penyimpanan, buatDataAwal, jedaMs = [300, 800], acak = Math.random, sekarang = () => new Date(), salin = true }) {
   if (!penyimpanan || typeof buatDataAwal !== 'function') throw new TypeError('penyimpanan dan buatDataAwal wajib');
+  const modeObjek = typeof penyimpanan.bacaObjek === 'function' && typeof penyimpanan.tulisObjek === 'function';
+  if (!salin && !modeObjek) throw new TypeError('salin: false hanya untuk penyimpanan objek');
+
+  const simpan = (st) => (modeObjek ? penyimpanan.tulisObjek(st) : penyimpanan.tulis(JSON.stringify(st)));
+  // Cache hasil parse: selama teks di penyimpanan tidak berubah, tidak perlu JSON.parse ulang.
+  let cache = { teks: null, st: null };
 
   const muat = async () => {
-    const teks = penyimpanan.baca();
-    if (teks) {
-      try {
-        const st = JSON.parse(teks);
-        if (st?.versi === 1) return st;
-      } catch {
-        /* rusak → buat ulang */
+    if (modeObjek) {
+      const st = penyimpanan.bacaObjek();
+      if (st?.versi === VERSI_DATA) return st;
+    } else {
+      const teks = penyimpanan.baca();
+      if (teks && teks === cache.teks) return cache.st;
+      if (teks) {
+        try {
+          const st = JSON.parse(teks);
+          if (st?.versi === VERSI_DATA) {
+            cache = { teks, st };
+            return st;
+          }
+        } catch {
+          /* rusak → buat ulang */
+        }
       }
     }
     const st = await buatDataAwal();
-    penyimpanan.tulis(JSON.stringify(st));
+    simpan(st);
     return st;
   };
 
@@ -674,7 +692,7 @@ export function buatMockApi({ penyimpanan, buatDataAwal, jedaMs = [300, 800], ac
     }
 
     if (method === 'POST' && url.pathname === '/reset') {
-      penyimpanan.tulis(JSON.stringify(await buatDataAwal()));
+      simpan(await buatDataAwal());
       return { status: 200, data: { ok: true } };
     }
 
@@ -690,7 +708,8 @@ export function buatMockApi({ penyimpanan, buatDataAwal, jedaMs = [300, 800], ac
     const { r, params } = cocok;
 
     // Salinan kerja: perubahan hanya disimpan jika handler selesai tanpa galat.
-    const st = structuredClone(await muat());
+    const asli = await muat();
+    const st = salin ? structuredClone(asli) : asli;
 
     let pengguna = null;
     if (r.peran) {
@@ -718,7 +737,7 @@ export function buatMockApi({ penyimpanan, buatDataAwal, jedaMs = [300, 800], ac
     }
     data = structuredClone(data ?? null);
     periksaRespons(data, pengguna?.peran);
-    if (method !== 'GET') penyimpanan.tulis(JSON.stringify(st));
+    if (method !== 'GET') simpan(st);
     return { status: ctx.status, data };
   }
 

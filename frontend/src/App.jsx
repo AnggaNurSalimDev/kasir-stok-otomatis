@@ -1,5 +1,6 @@
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { useSesi } from './sesi/SesiContext.jsx';
+import { PengalihProfil } from './merek/ProfilContext.jsx';
 import { Kepala, Memuat, PesanGalat, Segera, Wajib } from './komponen/umum.jsx';
 import Masuk from './halaman/Masuk.jsx';
 import Kasir from './halaman/crew/Kasir.jsx';
@@ -17,6 +18,9 @@ function Tata({ peran }) {
       <main className="isi">
         <Outlet />
       </main>
+      <footer className="kaki">
+        <PengalihProfil judul="Usaha contoh" />
+      </footer>
     </Wajib>
   );
 }

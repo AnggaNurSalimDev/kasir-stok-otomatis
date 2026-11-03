@@ -1,5 +1,7 @@
-// Tempat mock menyimpan seluruh data. Dua pilihan dengan antarmuka yang sama:
+// Tempat mock menyimpan seluruh data. Antarmuka:
 //   { baca(): string | null, tulis(teks: string): void, hapus(): void }
+// Opsional (dipakai pembuat data demo supaya cepat, tanpa JSON):
+//   { bacaObjek(): object | null, tulisObjek(objek): void }
 
 export function penyimpananMemori() {
   let isi = null;
@@ -14,21 +16,51 @@ export function penyimpananMemori() {
   };
 }
 
-// localStorage bisa melempar (mode privat, kuota penuh). Galat baca dianggap "belum ada data";
-// galat tulis diteruskan supaya pengguna tahu datanya tidak tersimpan.
-export function penyimpananLokal(kunci = 'kasir-demo-v1') {
+// Menyimpan objek apa adanya. Hanya untuk pembuat data demo (lihat buatMockApi opsi `salin`).
+export function penyimpananObjek() {
+  let objek = null;
+  return {
+    bacaObjek: () => objek,
+    tulisObjek: (o) => {
+      objek = o;
+    },
+    baca: () => (objek === null ? null : JSON.stringify(objek)),
+    tulis: (teks) => {
+      objek = JSON.parse(teks);
+    },
+    hapus: () => {
+      objek = null;
+    },
+  };
+}
+
+export const AWALAN_KUNCI = 'kasir-demo-v2:';
+
+// localStorage bisa melempar (mode privat, kuota penuh). Galat baca dianggap "belum ada data".
+// Kuota penuh saat menulis: data demo profil lain dihapus dulu, lalu dicoba sekali lagi.
+export function penyimpananLokal(kunci = `${AWALAN_KUNCI}teh`) {
+  const ls = () => window.localStorage;
   return {
     baca: () => {
       try {
-        return window.localStorage.getItem(kunci);
+        return ls().getItem(kunci);
       } catch {
         return null;
       }
     },
-    tulis: (teks) => window.localStorage.setItem(kunci, teks),
+    tulis: (teks) => {
+      try {
+        ls().setItem(kunci, teks);
+      } catch (e) {
+        const lain = Object.keys(ls()).filter((k) => k.startsWith(AWALAN_KUNCI) && k !== kunci);
+        if (lain.length === 0) throw e;
+        lain.forEach((k) => ls().removeItem(k));
+        ls().setItem(kunci, teks);
+      }
+    },
     hapus: () => {
       try {
-        window.localStorage.removeItem(kunci);
+        ls().removeItem(kunci);
       } catch {
         /* abaikan */
       }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Navigate, NavLink, useNavigate } from 'react-router-dom';
 import { useSesi, berandaPeran } from '../sesi/SesiContext.jsx';
+import { useProfil } from '../merek/ProfilContext.jsx';
 
 export function Memuat({ teks = 'Memuat…' }) {
   return <p className="memuat" role="status">{teks}</p>;
@@ -66,6 +67,16 @@ function TombolReset() {
   );
 }
 
+export function Merek() {
+  const { profil } = useProfil();
+  return (
+    <span className="merek">
+      {profil.logo.gambar && <img src={profil.logo.gambar} alt="" />}
+      {profil.logo.teks}
+    </span>
+  );
+}
+
 export function Kepala() {
   const { pengguna, keluar, mode } = useSesi();
   const navigate = useNavigate();
@@ -73,7 +84,7 @@ export function Kepala() {
   return (
     <header className="kepala">
       <div className="kepala-atas">
-        <strong>Kasir Stok Otomatis</strong>
+        <Merek />
         <span className="kepala-pengguna">
           {pengguna.nama}
           {mode === 'mock' && <TombolReset />}

@@ -7,14 +7,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { siapkanKlien } from '../api/index.js';
 
-const KUNCI = 'kasir-sesi';
 const PERAN = ['owner', 'crew'];
 const Sesi = createContext(null);
 
 // Data dari localStorage tidak dipercaya: rusak atau bentuknya salah → dianggap belum masuk.
-function bacaTersimpan() {
+function bacaTersimpan(kunci) {
   try {
-    const p = JSON.parse(window.localStorage.getItem(KUNCI));
+    const p = JSON.parse(window.localStorage.getItem(kunci));
     if (p && typeof p.id === 'string' && typeof p.nama === 'string' && PERAN.includes(p.peran)) return p;
   } catch {
     /* abaikan */
@@ -22,16 +21,19 @@ function bacaTersimpan() {
   return null;
 }
 
-function simpan(p) {
+function simpanKe(kunci, p) {
   try {
-    if (p) window.localStorage.setItem(KUNCI, JSON.stringify(p));
-    else window.localStorage.removeItem(KUNCI);
+    if (p) window.localStorage.setItem(kunci, JSON.stringify(p));
+    else window.localStorage.removeItem(kunci);
   } catch {
     /* mode privat: sesi hanya bertahan sampai refresh */
   }
 }
 
-export function SesiProvider({ children }) {
+// Sesi disimpan per profil: pengguna demo tiap usaha berbeda, dan berpindah usaha tidak saling menimpa.
+export function SesiProvider({ profil, children }) {
+  const kunci = `kasir-sesi:${profil.id}`;
+  const simpan = useCallback((p) => simpanKe(kunci, p), [kunci]);
   const [klien, setKlien] = useState(null);
   const [pengguna, setPengguna] = useState(null);
   const [memuat, setMemuat] = useState(true);
@@ -45,8 +47,8 @@ export function SesiProvider({ children }) {
     let batal = false;
     (async () => {
       try {
-        const k = await siapkanKlien(() => (ref.current ? { penggunaId: ref.current.id } : null));
-        const tersimpan = bacaTersimpan();
+        const k = await siapkanKlien(() => (ref.current ? { penggunaId: ref.current.id } : null), profil);
+        const tersimpan = bacaTersimpan(kunci);
         let sah = null;
         if (tersimpan) {
           // Pengguna tersimpan harus masih ada dengan peran yang sama (mis. setelah reset demo).
@@ -67,7 +69,7 @@ export function SesiProvider({ children }) {
     return () => {
       batal = true;
     };
-  }, []);
+  }, [profil, kunci, simpan]);
 
   const masuk = useCallback((p) => {
     if (!p || !PERAN.includes(p.peran)) throw new TypeError('Pengguna tidak valid');
@@ -75,13 +77,13 @@ export function SesiProvider({ children }) {
     simpan(data);
     ref.current = data;
     setPengguna(data);
-  }, []);
+  }, [simpan]);
 
   const keluar = useCallback(() => {
     simpan(null);
     ref.current = null;
     setPengguna(null);
-  }, []);
+  }, [simpan]);
 
   const api = useCallback(
     (path, opsi) => {
