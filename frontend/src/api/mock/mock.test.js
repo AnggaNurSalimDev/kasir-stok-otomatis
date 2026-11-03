@@ -1,0 +1,258 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { buatMockApi } from './server.js';
+import { penyimpananMemori } from './penyimpanan.js';
+import { buatKatalog, buatDataDemo } from './dataContoh.js';
+import { ErrorApi } from '../ErrorApi.js';
+
+let memori, api, jam;
+const panggil = async (alamat, method = 'GET', body, penggunaId = 'rina') => (await api.panggil(alamat, { method, body, penggunaId })).data;
+
+async function galat(janji) {
+  try {
+    await janji;
+  } catch (e) {
+    expect(e).toBeInstanceOf(ErrorApi);
+    return e;
+  }
+  throw new Error('Seharusnya melempar galat');
+}
+
+// Bahan kunci di katalog: creamer, airThaiTea, airGreenTea, bubukCoklat, bubukMatcha, bijiKopi, cup
+const SEMUA_KUNCI = { creamer: 1000, airThaiTea: 4000, airGreenTea: 3000, bubukCoklat: 1000, bubukMatcha: 500, bijiKopi: 1000, cup: 100 };
+const bukaPagi = (hitungan = SEMUA_KUNCI, oleh = 'rina') => panggil('/shift/buka', 'POST', { namaShift: 'Pagi', hitungan, kasAwal: 200000 }, oleh);
+const thaiTea2 = { item: [{ menuId: 'thaiTea', ukuran: 'Regular', toppingIds: ['tpArenJelly'], qty: 2 }], metodeBayar: 'qris' };
+
+beforeEach(() => {
+  memori = penyimpananMemori();
+  jam = new Date('2026-11-03T01:00:00Z'); // 08.00 WIB
+  api = buatMockApi({ penyimpanan: memori, buatDataAwal: buatKatalog, jedaMs: [0, 0], sekarang: () => jam });
+});
+
+describe('akses', () => {
+  it('tanpa pengguna → 401, crew ke endpoint owner → 403', async () => {
+    expect((await galat(api.panggil('/bahan'))).status).toBe(401);
+    expect((await galat(panggil('/shift', 'GET'))).status).toBe(403);
+  });
+  it('rute tidak ada → 404', async () => {
+    expect((await galat(panggil('/tidak-ada'))).kode).toBe('RUTE_TIDAK_ADA');
+  });
+  it('galat buatan untuk demo', async () => {
+    expect((await galat(panggil('/bahan?galat=409'))).status).toBe(409);
+  });
+});
+
+describe('hitung buta', () => {
+  it('crew tidak menerima stok; owner menerima', async () => {
+    const crew = await panggil('/bahan');
+    expect(crew[0]).not.toHaveProperty('stok');
+    const owner = await panggil('/bahan', 'GET', undefined, 'owner');
+    expect(owner[0]).toHaveProperty('stok');
+  });
+  it('tutup shift: crew hanya mendapat konfirmasi, tanpa selisih', async () => {
+    await bukaPagi();
+    const hasil = await panggil('/shift/tutup', 'POST', { hitungan: SEMUA_KUNCI, kasAkhir: 200000 });
+    expect(Object.keys(hasil).sort()).toEqual(['ditutupPada', 'id', 'status']);
+  });
+});
+
+describe('validasi body (skema zod)', () => {
+  it('field asing ditolak', async () => {
+    const e = await galat(panggil('/transaksi', 'POST', { ...thaiTea2, diskon: 100 }));
+    expect(e.status).toBe(400);
+  });
+  it('tunai tanpa uang diterima ditolak dengan field yang jelas', async () => {
+    await bukaPagi();
+    const e = await galat(panggil('/transaksi', 'POST', { item: thaiTea2.item, metodeBayar: 'tunai' }));
+    expect(e.perField).toEqual({ uangDiterima: 'Wajib diisi untuk pembayaran tunai' });
+  });
+});
+
+describe('alur shift', () => {
+  it('kasir terkunci sebelum shift dibuka (A-10)', async () => {
+    expect((await galat(panggil('/transaksi', 'POST', thaiTea2))).status).toBe(409);
+  });
+
+  it('buka shift wajib menghitung semua bahan kunci, tidak lebih', async () => {
+    const { cup, ...kurang } = SEMUA_KUNCI;
+    expect((await galat(bukaPagi(kurang))).perField).toHaveProperty('hitungan.cup');
+    expect((await galat(bukaPagi({ ...SEMUA_KUNCI, gula: 10 }))).perField).toHaveProperty('hitungan.gula');
+  });
+
+  it('hanya satu shift terbuka; transaksi mengurangi stok; tutup menghasilkan selisih', async () => {
+    await bukaPagi();
+    const struk = await panggil('/transaksi', 'POST', thaiTea2);
+    expect(struk.total).toBe((12000 + 3000) * 2);
+    // 2 × Thai Tea Regular: creamer 16 gr, air thai tea 300 ml, cup 2
+    const owner = Object.fromEntries((await panggil('/bahan', 'GET', undefined, 'owner')).map((b) => [b.id, b.stok]));
+    expect(owner).toMatchObject({ creamer: 984, airThaiTea: 3700, cup: 98 });
+
+    jam = new Date('2026-11-03T08:00:00Z');
+    // creamer fisik 960 → seharusnya 984 → selisih −24 (batas: max(5% × 16 = 0,8, minimum 2) = 2) → perlu dicek
+    await panggil('/shift/tutup', 'POST', { hitungan: { ...SEMUA_KUNCI, creamer: 960, airThaiTea: 3700, cup: 98 }, kasAkhir: 200000 }, 'dimas');
+    const [ringkas] = await panggil('/shift', 'GET', undefined, 'owner');
+    const detail = await panggil(`/shift/${ringkas.id}`, 'GET', undefined, 'owner');
+    const creamer = detail.hasil.bahan.find((b) => b.bahanId === 'creamer');
+    expect(creamer).toMatchObject({ awal: 1000, pakai: 16, seharusnya: 984, akhir: 960, selisih: -24, batas: 2, status: 'perlu_dicek' });
+    expect(detail).toMatchObject({ status: 'ditutup', dibukaOleh: 'Rina', ditutupOleh: 'Dimas' });
+    // stok sistem disesuaikan ke hitungan fisik (A-15)
+    const sesudah = Object.fromEntries((await panggil('/bahan', 'GET', undefined, 'owner')).map((b) => [b.id, b.stok]));
+    expect(sesudah.creamer).toBe(960);
+  });
+
+  it('shift lupa ditutup: shift berikutnya menutupnya dengan hitungan buka, serah terima null', async () => {
+    await bukaPagi();
+    await panggil('/transaksi', 'POST', thaiTea2);
+    jam = new Date('2026-11-03T08:00:00Z');
+    await panggil('/shift/buka', 'POST', { namaShift: 'Sore', hitungan: { ...SEMUA_KUNCI, creamer: 984 }, kasAwal: 200000 }, 'sari');
+    const [baru, lama] = await panggil('/shift', 'GET', undefined, 'owner');
+    expect(lama.status).toBe('tidak_ditutup');
+    const dLama = await panggil(`/shift/${lama.id}`, 'GET', undefined, 'owner');
+    expect(dLama.hasil.sumberAkhir).toBe('buka_berikutnya');
+    expect(dLama.hasil.bahan.find((b) => b.bahanId === 'creamer').selisih).toBe(0);
+    const dBaru = await panggil(`/shift/${baru.id}`, 'GET', undefined, 'owner');
+    expect(dBaru.serahTerima.bahan.every((b) => b.selisih === null)).toBe(true);
+  });
+
+  it('selisih serah terima antara tutup dan buka berikutnya', async () => {
+    await bukaPagi();
+    await panggil('/shift/tutup', 'POST', { hitungan: SEMUA_KUNCI, kasAkhir: 200000 });
+    await panggil('/shift/buka', 'POST', { namaShift: 'Sore', hitungan: { ...SEMUA_KUNCI, creamer: 950 }, kasAwal: 195000 }, 'dimas');
+    const [baru] = await panggil('/shift', 'GET', undefined, 'owner');
+    const d = await panggil(`/shift/${baru.id}`, 'GET', undefined, 'owner');
+    expect(d.serahTerima.bahan.find((b) => b.bahanId === 'creamer').selisih).toBe(-50);
+    expect(d.serahTerima.kasSelisih).toBe(-5000);
+  });
+
+  it('kas: penjualan tunai dan pengeluaran ikut dihitung', async () => {
+    await bukaPagi();
+    await panggil('/transaksi', 'POST', { item: thaiTea2.item, metodeBayar: 'tunai', uangDiterima: 50000 }); // total 30.000
+    await panggil('/pengeluaran-kas', 'POST', { jumlah: 10000, keterangan: 'Es batu' });
+    await panggil('/shift/tutup', 'POST', { hitungan: { ...SEMUA_KUNCI, creamer: 984, airThaiTea: 3700, cup: 98 }, kasAkhir: 218000 });
+    const [s] = await panggil('/shift', 'GET', undefined, 'owner');
+    const d = await panggil(`/shift/${s.id}`, 'GET', undefined, 'owner');
+    expect(d.hasil.kas).toEqual({ seharusnya: 220000, selisih: -2000, status: 'perlu_dicek', arah: 'kurang' });
+  });
+});
+
+describe('transaksi', () => {
+  beforeEach(() => bukaPagi());
+
+  it('stok boleh minus: penjualan jalan, ada peringatan tanpa angka (A-08)', async () => {
+    // arenJelly stok 0 (belum ada opname di katalog kosong)
+    const struk = await panggil('/transaksi', 'POST', thaiTea2);
+    expect(struk.peringatanMinus).toContainEqual({ bahanId: 'arenJelly', nama: 'Aren jelly' });
+  });
+  it('uang kurang ditolak', async () => {
+    const e = await galat(panggil('/transaksi', 'POST', { item: thaiTea2.item, metodeBayar: 'tunai', uangDiterima: 20000 }));
+    expect(e.perField.uangDiterima).toMatch(/Kurang Rp 10.000/);
+  });
+  it('request gagal tidak mengubah data (atomik)', async () => {
+    const sebelum = memori.baca();
+    await galat(panggil('/transaksi', 'POST', { item: [{ menuId: 'thaiTea', ukuran: 'Jumbo', qty: 1 }], metodeBayar: 'qris' }));
+    expect(memori.baca()).toBe(sebelum);
+  });
+});
+
+describe('barang masuk & koreksi (A-12)', () => {
+  beforeEach(() => bukaPagi());
+
+  it('satuan bantu dikonversi: 2 karung gula → 50.000 gr', async () => {
+    const e = await panggil('/barang-masuk', 'POST', { bahanId: 'gula', jumlah: 2, satuan: 'karung' });
+    expect(e).toMatchObject({ jumlahDasar: 50000, satuanDasar: 'gr' });
+  });
+  it('koreksi wajib alasan, dan tidak boleh membuat jumlah negatif', async () => {
+    const asal = await panggil('/barang-masuk', 'POST', { bahanId: 'gula', jumlah: 2, satuan: 'karung' });
+    expect((await galat(panggil('/barang-masuk', 'POST', { bahanId: 'gula', jumlah: -1, satuan: 'karung', koreksiDari: asal.id }))).perField).toHaveProperty('alasan');
+    await panggil('/barang-masuk', 'POST', { bahanId: 'gula', jumlah: -1, satuan: 'karung', koreksiDari: asal.id, alasan: 'Salah ketik' });
+    expect((await galat(panggil('/barang-masuk', 'POST', { bahanId: 'gula', jumlah: -2, satuan: 'karung', koreksiDari: asal.id, alasan: 'x' }))).status).toBe(409);
+  });
+  it('jumlah negatif tanpa koreksi ditolak', async () => {
+    expect((await galat(panggil('/barang-masuk', 'POST', { bahanId: 'gula', jumlah: -1, satuan: 'karung' }))).status).toBe(400);
+  });
+});
+
+describe('owner: bahan & resep', () => {
+  const owner = (alamat, method, body) => panggil(alamat, method, body, 'owner');
+
+  it('toleransi minimum otomatis mengikuti ketelitian hitung per satuan dasar', async () => {
+    const bahan = Object.fromEntries((await owner('/bahan', 'GET')).map((b) => [b.id, b]));
+    expect(bahan.creamer).toMatchObject({ toleransiMinimum: 2, toleransiMinimumOtomatis: true }); // gr
+    expect(bahan.airThaiTea.toleransiMinimum).toBe(10); // ml, bukan 1 garis gelas (150 ml)
+    expect(bahan.cup.toleransiMinimum).toBe(0); // pcs dihitung pas
+    expect(bahan.oreo.toleransiMinimum).toBe(0); // satuan bebas (keping)
+  });
+  it('owner bisa mengisi toleransi minimum sendiri', async () => {
+    const [creamer] = await owner('/bahan', 'GET');
+    const b = await owner('/bahan/creamer', 'PUT', { nama: creamer.nama, satuanDasar: 'gr', satuanBantu: creamer.satuanBantu, bahanKunci: true, toleransiMinimum: 8 });
+    expect(b).toMatchObject({ toleransiMinimum: 8, toleransiMinimumOtomatis: false });
+  });
+  it('satuan dasar terkunci setelah dipakai (A-02)', async () => {
+    const [creamer] = await owner('/bahan', 'GET');
+    const body = { nama: creamer.nama, satuanDasar: 'kg', satuanBantu: creamer.satuanBantu };
+    expect((await galat(owner('/bahan/creamer', 'PUT', body))).status).toBe(409);
+  });
+  it('satuan bantu yang dipakai resep tidak boleh dihapus', async () => {
+    const e = await galat(owner('/bahan/creamer', 'PUT', { nama: 'Creamer bubuk', satuanDasar: 'gr', satuanBantu: [{ nama: 'kaleng', konversi: 1000 }] }));
+    expect(e.message).toMatch(/sendok/);
+  });
+  it('bahan yang dipakai resep tidak bisa diarsipkan (A-09)', async () => {
+    expect((await galat(owner('/bahan/creamer/arsip', 'PATCH', { arsip: true }))).status).toBe(409);
+  });
+  it('resep dengan satuan asing ditolak, field menunjuk barisnya', async () => {
+    const e = await galat(owner('/menu', 'POST', {
+      nama: 'Es Teh', kategori: 'Teh',
+      ukuran: [{ nama: 'Regular', harga: 5000, resep: [{ bahanId: 'gula', jumlah: 1, satuan: 'gelas' }] }],
+    }));
+    expect(e.detail[0].field).toBe('ukuran[0].resep[0].satuan');
+  });
+  it('bahan baru dengan satuan bebas', async () => {
+    const b = await owner('/bahan', 'POST', { nama: 'Telur', satuanDasar: 'butir', satuanBantu: [{ nama: 'tray', konversi: 30 }] });
+    expect(b).toMatchObject({ satuanDasar: 'butir', stok: 0, toleransiPersen: 5, toleransiMinimumOtomatis: true });
+  });
+});
+
+describe('laporan harian', () => {
+  it('crew hanya hari ini', async () => {
+    expect((await galat(panggil('/laporan/harian?tanggal=2026-11-01'))).status).toBe(403);
+    const lap = await panggil('/laporan/harian');
+    expect(lap.tanggal).toBe('2026-11-03');
+  });
+});
+
+describe('data demo', () => {
+  const sekarang = new Date('2026-11-03T02:00:00Z');
+
+  it('deterministik: dua kali dibuat hasilnya sama', async () => {
+    const a = await buatDataDemo({ sekarang });
+    const b = await buatDataDemo({ sekarang });
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+
+  it('berisi semua kasus yang dijanjikan rencana', async () => {
+    const st = await buatDataDemo({ sekarang });
+    const status = st.shift.map((s) => s.status);
+    expect(status.filter((s) => s !== 'terbuka').length).toBeGreaterThanOrEqual(10);
+    expect(status.filter((s) => s === 'tidak_ditutup')).toHaveLength(1);
+    expect(status.at(-1)).toBe('terbuka'); // shift hari ini, kasir langsung bisa dipakai
+
+    const baris = st.shift.flatMap((s) => s.hasil?.bahan ?? []);
+    expect(baris.some((r) => r.status === 'perlu_dicek' && r.arah === 'kurang')).toBe(true);
+    expect(baris.some((r) => r.status === 'perlu_dicek' && r.arah === 'lebih')).toBe(true);
+    expect(baris.filter((r) => r.status === 'wajar').length).toBeGreaterThan(baris.length / 2);
+
+    expect(st.shift.some((s) => s.hasil?.kas?.status === 'perlu_dicek')).toBe(true);
+    expect(st.shift.some((s) => s.serahTerima?.bahan.some((b) => b.selisihX10 && b.selisihX10 !== 0))).toBe(true);
+    expect(st.barangMasuk.some((e) => e.koreksiDari)).toBe(true);
+  });
+
+  it('saran toleransi muncul di halaman bahan owner', async () => {
+    const st = await buatDataDemo({ sekarang });
+    const m = penyimpananMemori();
+    m.tulis(JSON.stringify(st));
+    const a = buatMockApi({ penyimpanan: m, buatDataAwal: buatKatalog, jedaMs: [0, 0], sekarang: () => sekarang });
+    const { data } = await a.panggil('/bahan', { penggunaId: 'owner' });
+    const creamer = data.find((b) => b.id === 'creamer');
+    expect(creamer.saranToleransi).toMatchObject({ jumlahShift: expect.any(Number) });
+    expect(creamer.saranToleransi.jumlahShift).toBeGreaterThanOrEqual(10);
+  });
+});
