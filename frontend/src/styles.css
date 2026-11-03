@@ -1,0 +1,48 @@
+/* Gaya dasar sementara. Desain visual dikerjakan bersama halaman kasir. */
+:root {
+  --teks: #1f2328;
+  --redup: #59636e;
+  --garis: #d1d9e0;
+  --latar: #f6f8fa;
+  --utama: #0b6e4f;
+  --galat: #b42318;
+  --sukses: #0b6e4f;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--teks);
+  line-height: 1.5;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: #fff; }
+h1 { font-size: 1.4rem; margin: 0 0 1rem; }
+h2 { font-size: 1.1rem; margin: 0 0 0.25rem; }
+
+.isi, .halaman-masuk { max-width: 1100px; margin: 0 auto; padding: 1rem; }
+.halaman-masuk { max-width: 720px; padding-top: 3rem; }
+.memuat { padding: 1rem; color: var(--redup); }
+.bantuan { color: var(--redup); margin: 0 0 0.75rem; font-size: 0.9rem; }
+
+.kepala { border-bottom: 1px solid var(--garis); background: var(--latar); }
+.kepala-atas { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.75rem 1rem; flex-wrap: wrap; }
+.kepala-pengguna { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.menu { display: flex; gap: 0.25rem; padding: 0 1rem; overflow-x: auto; }
+.menu a { padding: 0.5rem 0.75rem; color: var(--redup); text-decoration: none; border-bottom: 2px solid transparent; white-space: nowrap; }
+.menu a.active { color: var(--teks); border-bottom-color: var(--utama); font-weight: 600; }
+
+.pesan { padding: 0.75rem 1rem; border-radius: 6px; margin: 0 0 1rem; border: 1px solid var(--garis); background: var(--latar); }
+.pesan-galat { border-color: var(--galat); color: var(--galat); background: #fef3f2; }
+.pesan-sukses { border-color: var(--sukses); background: #ecfdf3; }
+
+button { font: inherit; cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: 0.6; }
+.tombol-kecil { padding: 0.25rem 0.6rem; border: 1px solid var(--garis); background: #fff; border-radius: 6px; }
+.tombol-besar { display: block; width: 100%; padding: 1rem; margin-bottom: 0.5rem; text-align: left; font-size: 1.05rem; border: 1px solid var(--garis); background: #fff; border-radius: 8px; }
+.tombol-besar:hover { border-color: var(--utama); }
+.tautan { background: none; border: none; color: var(--utama); text-decoration: underline; margin-left: 0.5rem; padding: 0; }
+
+.pilih-pengguna { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem; margin-top: 1.5rem; }
+
+.tabel-gulir { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--garis); vertical-align: top; }
+th { background: var(--latar); font-weight: 600; }
+small { color: var(--redup); }

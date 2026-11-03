@@ -1,19 +1,24 @@
 {
-  "name": "kasir",
+  "name": "kasir-stok-otomatis",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Web kasir dengan pengurangan stok otomatis per satuan bahan",
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "type": "module",
   "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "vite": "^5.4.21",
     "vitest": "^2.1.9"
   },
   "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.6",
     "zod": "^3.25.76"
-  }
+  },
+  "private": true
 }

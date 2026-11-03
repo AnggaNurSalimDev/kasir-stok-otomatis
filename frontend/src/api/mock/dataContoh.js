@@ -204,8 +204,11 @@ export function buatDataDemo({ sekarang = new Date(), hari = 6, benih = 2026 } =
       const oleh = pagi ? crew[d % 3] : crew[(d + 1) % 3];
       const kunci = st().bahan.filter((b) => b.bahanKunci && !b.arsip).map((b) => b.id);
 
-      // Buka shift
+      const hariIniTerbuka = i === jumlahShift - 1;
+
+      // Buka shift. Shift hari ini tidak boleh dibuka di masa depan (demo bisa dibuka jam berapa pun).
       jam = jamJakarta(mulai, d, pagi ? 7 : 15, antara(0, 10));
+      if (hariIniTerbuka && jam.getTime() > sekarang.getTime() - 60 * 60000) jam = new Date(sekarang.getTime() - 60 * 60000);
       await panggil('/shift/buka', 'POST', { namaShift: pagi ? 'Pagi' : 'Sore', hitungan: hitung(kunci), kasAwal: kasLaci }, oleh);
 
       // Barang masuk jika fisik menipis
@@ -234,10 +237,14 @@ export function buatDataDemo({ sekarang = new Date(), hari = 6, benih = 2026 } =
       }
 
       // Penjualan
-      const hariIniTerbuka = i === jumlahShift - 1;
       const jumlahTrx = hariIniTerbuka ? 6 : antara(14, 24);
+      // Transaksi disebar rata sepanjang jam shift (Pagi 07–15, Sore 15–22), dengan sedikit acak.
+      const awalJual = jam.getTime() + 10 * 60000;
+      const akhirShift = jamJakarta(mulai, d, pagi ? 14 : 21, 30).getTime();
+      const akhirJual = hariIniTerbuka ? Math.min(akhirShift, sekarang.getTime() - 2 * 60000) : akhirShift;
+      const jarak = (akhirJual - awalJual) / jumlahTrx;
       for (let t = 0; t < jumlahTrx; t++) {
-        jam = new Date(jam.getTime() + antara(8, 18) * 60000);
+        jam = new Date(awalJual + t * jarak + acak() * jarak * 0.8);
         const menu = pilih(katalog.menu);
         const ukuran = pilih(menu.ukuran).nama;
         const toppingIds = menu.toppingIds.length && acak() < 0.4 ? [pilih(menu.toppingIds)] : [];

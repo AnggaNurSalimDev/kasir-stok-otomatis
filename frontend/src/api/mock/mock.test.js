@@ -256,3 +256,17 @@ describe('data demo', () => {
     expect(creamer.saranToleransi.jumlahShift).toBeGreaterThanOrEqual(10);
   });
 });
+
+describe('data demo: waktu', () => {
+  it('tidak ada kejadian di masa depan, berapa pun jam demo dibuka', async () => {
+    for (const iso of ['2026-11-03T00:30:00Z', '2026-11-03T02:00:00Z', '2026-11-03T14:00:00Z', '2026-11-02T18:30:00Z']) {
+      const sekarang = new Date(iso);
+      const st = await buatDataDemo({ sekarang });
+      const semua = [
+        ...st.transaksi.map((t) => t.pada), ...st.barangMasuk.map((e) => e.pada), ...st.penyesuaian.map((e) => e.pada),
+        ...st.shift.flatMap((s) => [s.dibukaPada, s.ditutupPada].filter(Boolean)),
+      ];
+      expect(semua.every((p) => new Date(p) <= sekarang), iso).toBe(true);
+    }
+  });
+});
