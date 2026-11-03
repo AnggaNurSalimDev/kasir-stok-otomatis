@@ -5,18 +5,56 @@ import { Memuat, Pesan, PesanGalat } from '../../komponen/umum.jsx';
 import { Isian, RingkasanGalat, useKirim, GalatForm } from '../../komponen/form.jsx';
 import { angkaBulatDari, formatRupiah } from '../../komponen/formAngka.js';
 import EditorResep, { barisKosong, resepKeBody, resepKeBaris } from '../../komponen/EditorResep.jsx';
+import { SALURAN_ONLINE, NAMA_SALURAN } from '../../../../logika/saluran.js';
+
+// ---------------------------------------------------------------------------
+// Harga per aplikasi (kosong = sama dengan harga toko)
+// ---------------------------------------------------------------------------
+
+const hargaSaluranKeForm = (hs = {}) => Object.fromEntries(SALURAN_ONLINE.map((x) => [x, hs[x] === undefined ? '' : String(hs[x])]));
+
+// { gofood: '14500', grabfood: '' } → { gofood: 14500 } + galat per field
+function hargaSaluranKeBody(form, awalanField, label) {
+  const hasil = {};
+  const detail = [];
+  for (const x of SALURAN_ONLINE) {
+    const teks = (form?.[x] ?? '').trim();
+    if (teks === '') continue;
+    const n = angkaBulatDari(teks);
+    if (n === null || n < 0) detail.push({ field: `${awalanField}.${x}`, pesan: `${label}: harga ${NAMA_SALURAN[x]} wajib rupiah bulat` });
+    else hasil[x] = n;
+  }
+  return { hargaSaluran: hasil, detail };
+}
+
+function IsianHargaSaluran({ nilai, onChange, perField, awalanField, hargaToko }) {
+  return (
+    <div className="baris-isian">
+      {SALURAN_ONLINE.map((x) => (
+        <Isian key={x} label={`Harga ${NAMA_SALURAN[x]}`} galat={perField[`${awalanField}.${x}`]}>
+          {(p) => <input {...p} className="angka" inputMode="numeric" value={nilai[x]} placeholder={hargaToko ? `sama: ${hargaToko}` : 'sama dengan toko'} onChange={(e) => onChange({ ...nilai, [x]: e.target.value })} />}
+        </Isian>
+      ))}
+    </div>
+  );
+}
+
+const ringkasHargaSaluran = (b) => {
+  const isi = SALURAN_ONLINE.filter((x) => Number.isInteger(b.hargaSaluran?.[x]) && b.hargaSaluran[x] !== b.harga);
+  return isi.length ? isi.map((x) => `${NAMA_SALURAN[x]} ${formatRupiah(b.hargaSaluran[x])}`).join(' · ') : null;
+};
 
 // ---------------------------------------------------------------------------
 // Menu
 // ---------------------------------------------------------------------------
 
-const ukuranKosong = (nama = 'Regular') => ({ nama, harga: '', resep: [barisKosong()] });
+const ukuranKosong = (nama = 'Regular') => ({ nama, harga: '', hargaSaluran: hargaSaluranKeForm(), resep: [barisKosong()] });
 
 const menuKeForm = (m) => ({
   nama: m.nama,
   kategori: m.kategori,
   toppingIds: m.toppingIds,
-  ukuran: m.ukuran.map((u) => ({ nama: u.nama, harga: String(u.harga), resep: resepKeBaris(u.resep) })),
+  ukuran: m.ukuran.map((u) => ({ nama: u.nama, harga: String(u.harga), hargaSaluran: hargaSaluranKeForm(u.hargaSaluran), resep: resepKeBaris(u.resep) })),
 });
 
 function menuKeBody(f) {
@@ -26,7 +64,9 @@ function menuKeBody(f) {
     if (harga === null) detail.push({ field: `ukuran[${i}].harga`, pesan: `Harga ${u.nama || `ukuran ${i + 1}`} wajib rupiah bulat` });
     const r = resepKeBody(u.resep, `ukuran[${i}].resep`);
     detail.push(...r.detail.map((d) => ({ ...d, pesan: `${u.nama || `Ukuran ${i + 1}`}: ${d.pesan}` })));
-    return { nama: u.nama, harga: harga ?? 0, resep: r.resep };
+    const hs = hargaSaluranKeBody(u.hargaSaluran, `ukuran[${i}].hargaSaluran`, u.nama || `Ukuran ${i + 1}`);
+    detail.push(...hs.detail);
+    return { nama: u.nama, harga: harga ?? 0, hargaSaluran: hs.hargaSaluran, resep: r.resep };
   });
   if (detail.length) throw new GalatForm(detail);
   return { nama: f.nama, kategori: f.kategori, ukuran, toppingIds: f.toppingIds };
@@ -43,7 +83,7 @@ function FormMenu({ awal, bahan, topping, kategori, onSelesai, onBatal }) {
   const tambahUkuran = () => {
     const sumber = f.ukuran[0];
     const nama = f.ukuran.some((u) => u.nama === 'Large') ? '' : 'Large';
-    setF({ ...f, ukuran: [...f.ukuran, sumber ? { nama, harga: '', resep: sumber.resep.map((r) => ({ ...r })) } : ukuranKosong(nama)] });
+    setF({ ...f, ukuran: [...f.ukuran, sumber ? { nama, harga: '', hargaSaluran: hargaSaluranKeForm(), resep: sumber.resep.map((r) => ({ ...r })) } : ukuranKosong(nama)] });
   };
 
   const simpan = async (e) => {
@@ -82,6 +122,11 @@ function FormMenu({ awal, bahan, topping, kategori, onSelesai, onBatal }) {
               <button type="button" className="tombol-kecil" onClick={() => setF({ ...f, ukuran: f.ukuran.filter((_, j) => j !== i) })}>Hapus ukuran</button>
             )}
           </div>
+          <details className="harga-saluran" open={SALURAN_ONLINE.some((x) => u.hargaSaluran[x] !== '')}>
+            <summary>Harga di aplikasi (GoFood, GrabFood, ShopeeFood)</summary>
+            <p className="bantuan">Kosong = sama dengan harga toko. Stok tetap memakai resep yang sama.</p>
+            <IsianHargaSaluran nilai={u.hargaSaluran} onChange={(hargaSaluran) => setUkuran(i, { hargaSaluran })} perField={pf} awalanField={`ukuran[${i}].hargaSaluran`} hargaToko={u.harga} />
+          </details>
           <EditorResep baris={u.resep} onChange={(resep) => setUkuran(i, { resep })} bahan={bahan} perField={pf} awalanField={`ukuran[${i}].resep`} />
         </fieldset>
       ))}
@@ -124,7 +169,9 @@ function FormMenu({ awal, bahan, topping, kategori, onSelesai, onBatal }) {
 function FormTopping({ awal, bahan, onSelesai, onBatal }) {
   const { api } = useSesi();
   const [f, setF] = useState(() =>
-    awal ? { nama: awal.nama, harga: String(awal.harga), resep: resepKeBaris(awal.resep) } : { nama: '', harga: '', resep: [barisKosong()] },
+    awal
+      ? { nama: awal.nama, harga: String(awal.harga), hargaSaluran: hargaSaluranKeForm(awal.hargaSaluran), resep: resepKeBaris(awal.resep) }
+      : { nama: '', harga: '', hargaSaluran: hargaSaluranKeForm(), resep: [barisKosong()] },
   );
   const kirim = useKirim();
   const pf = kirim.perField;
@@ -134,9 +181,10 @@ function FormTopping({ awal, bahan, onSelesai, onBatal }) {
     const hasil = await kirim.jalankan(() => {
       const harga = angkaBulatDari(f.harga);
       const r = resepKeBody(f.resep, 'resep');
-      const detail = [...(harga === null ? [{ field: 'harga', pesan: 'Harga wajib rupiah bulat' }] : []), ...r.detail];
+      const hs = hargaSaluranKeBody(f.hargaSaluran, 'hargaSaluran', 'Topping');
+      const detail = [...(harga === null ? [{ field: 'harga', pesan: 'Harga wajib rupiah bulat' }] : []), ...hs.detail, ...r.detail];
       if (detail.length) throw new GalatForm(detail);
-      return api(awal ? `/topping/${awal.id}` : '/topping', { method: awal ? 'PUT' : 'POST', body: { nama: f.nama, harga, resep: r.resep } });
+      return api(awal ? `/topping/${awal.id}` : '/topping', { method: awal ? 'PUT' : 'POST', body: { nama: f.nama, harga, hargaSaluran: hs.hargaSaluran, resep: r.resep } });
     });
     if (hasil) onSelesai(awal ? 'Topping disimpan' : 'Topping ditambahkan');
   };
@@ -151,6 +199,10 @@ function FormTopping({ awal, bahan, onSelesai, onBatal }) {
           {(p) => <input {...p} className="angka" inputMode="numeric" value={f.harga} onChange={(e) => setF({ ...f, harga: e.target.value })} />}
         </Isian>
       </div>
+      <details className="harga-saluran" open={SALURAN_ONLINE.some((x) => f.hargaSaluran[x] !== '')}>
+        <summary>Harga di aplikasi</summary>
+        <IsianHargaSaluran nilai={f.hargaSaluran} onChange={(hargaSaluran) => setF({ ...f, hargaSaluran })} perField={pf} awalanField="hargaSaluran" hargaToko={f.harga} />
+      </details>
       <EditorResep baris={f.resep} onChange={(resep) => setF({ ...f, resep })} bahan={bahan} perField={pf} awalanField="resep" />
       <div className="aksi">
         <button type="submit" className="tombol-utama" disabled={kirim.sedang}>{kirim.sedang ? 'Menyimpan…' : 'Simpan'}</button>
@@ -219,6 +271,7 @@ export default function Menu() {
                 {m.ukuran.map((u) => (
                   <p key={u.nama}>
                     <strong>{u.nama}</strong> · {formatRupiah(u.harga)}
+                    {ringkasHargaSaluran(u) && <><br /><small>{ringkasHargaSaluran(u)}</small></>}
                     <br />
                     <small>{ringkasResep(u.resep, bahanById)}</small>
                   </p>
@@ -238,7 +291,7 @@ export default function Menu() {
               <h3>{t.nama}</h3>
               <button type="button" className="tombol-kecil" onClick={() => mulai('topping', t)}>Ubah</button>
             </div>
-            <p>+{formatRupiah(t.harga)}<br /><small>{ringkasResep(t.resep, bahanById)}</small></p>
+            <p>+{formatRupiah(t.harga)}{ringkasHargaSaluran(t) && <><br /><small>{ringkasHargaSaluran(t)}</small></>}<br /><small>{ringkasResep(t.resep, bahanById)}</small></p>
           </article>
         ))}
       </div>

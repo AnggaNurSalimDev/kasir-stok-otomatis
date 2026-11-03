@@ -20,6 +20,7 @@ import {
   jumlahkanPemakaian, hitungSelisihShift, selisihSerahTerima,
   buatPenyesuaian, hitungKas, saranToleransi,
 } from '../../../../logika/shift.js';
+import { SALURAN_ONLINE, NAMA_SALURAN, adalahOnline, hargaDi, perkiraanKomisi, cocokkanItem } from '../../../../logika/saluran.js';
 
 const H = dariX10;
 const galat = (status, kode, pesan, detail) => new ErrorApi(status, kode, pesan, detail);
@@ -54,6 +55,67 @@ function daftarHitung(st, namaShift) {
   const awalSemua = mode === 'setiap_shift' || (mode === 'outlet' && namaShift === nama[0]);
   const tutupSemua = mode === 'setiap_shift' || (mode === 'outlet' && namaShift === nama.at(-1));
   return { mode, kunci, awal: awalSemua ? semua : kunci, tutup: tutupSemua ? semua : kunci, awalSemua, tutupSemua };
+}
+
+// ---------- saluran online ----------
+export const SALURAN_BAWAAN = Object.fromEntries(SALURAN_ONLINE.map((s) => [s, { aktif: false, mode: 'manual', komisiPersen: 20, tersambungPada: null }]));
+const setelSaluran = (st, s) => st.pengaturan.saluran?.[s] ?? SALURAN_BAWAAN[s];
+const transaksiSah = (trx) => trx.filter((t) => !t.batal); // batal: penjualan tidak dihitung, bahan tetap terpakai
+const jumlahUang = (trx) => trx.reduce((a, t) => a + t.total, 0);
+
+// Nomor pesanan unik per saluran, baik yang dicatat manual maupun yang masuk otomatis (A-19).
+function nomorDipakai(st, saluran, nomor) {
+  const n = nomor.trim().toLowerCase();
+  const sama = (x) => x.saluran === saluran && x.nomorPesanan?.trim().toLowerCase() === n;
+  return st.pesananMasuk.find(sama) ?? st.transaksi.find(sama) ?? null; // pesanan otomatis dulu: yang diterima juga punya transaksi
+}
+
+function indeksKatalog(st) {
+  return { menuById: new Map(st.menu.map((m) => [m.id, m])), toppingById: new Map(st.topping.map((t) => [t.id, t])) };
+}
+
+// Setiap item pesanan aplikasi dicocokkan ke menu kasir saat dibaca (pemetaan bisa ditambah belakangan).
+function cocokkanPesanan(st, p) {
+  const indeks = { ...indeksKatalog(st), pemetaan: st.pemetaan[p.saluran] ?? {} };
+  return p.item.map((it) => ({ it, cocok: cocokkanItem(it, indeks) }));
+}
+
+function tampilPesanan(st, p) {
+  const baris = cocokkanPesanan(st, p);
+  const item = baris.map(({ it, cocok }) => {
+    if (cocok.masalah) return { kode: it.kode, nama: it.nama, qty: it.qty, harga: it.harga, topping: it.topping, masalah: cocok.masalah, menuKasir: null };
+    const menu = st.menu.find((m) => m.id === cocok.menuId);
+    const ukuran = menu.ukuran.find((u) => u.nama === cocok.ukuran);
+    const hargaKasir = (hargaDi(ukuran, p.saluran) + cocok.toppingIds.reduce((a, tid) => a + hargaDi(st.topping.find((t) => t.id === tid), p.saluran), 0)) * cocok.kali;
+    return {
+      kode: it.kode, nama: it.nama, qty: it.qty, harga: it.harga, topping: it.topping, masalah: null,
+      menuKasir: { menuId: menu.id, nama: menu.nama, ukuran: ukuran.nama, kali: cocok.kali },
+      hargaBerbeda: hargaKasir !== it.harga,
+    };
+  });
+  const trx = p.transaksiId ? st.transaksi.find((t) => t.id === p.transaksiId) : null;
+  return {
+    id: p.id, saluran: p.saluran, namaSaluran: NAMA_SALURAN[p.saluran], nomorPesanan: p.nomorPesanan, pelanggan: p.pelanggan,
+    catatan: p.catatan ?? null, total: p.total, masukPada: p.masukPada, status: p.status,
+    item, siapDiterima: item.every((i) => !i.masalah), hargaBerbeda: item.some((i) => i.hargaBerbeda),
+    diprosesOleh: namaPengguna(st, p.diprosesOleh), diprosesPada: p.diprosesPada, alasan: p.alasan ?? null,
+    transaksiId: p.transaksiId ?? null, batal: trx?.batal ? { pada: trx.batal.pada, alasan: trx.batal.alasan, sumber: trx.batal.sumber } : null,
+  };
+}
+
+// { toko: { jumlah, total }, gofood: {...}, ... } — transaksi batal tidak dihitung.
+function perSaluran(st, trx) {
+  const hasil = {};
+  for (const s of ['toko', ...SALURAN_ONLINE]) {
+    const t = transaksiSah(trx).filter((x) => (x.saluran ?? 'toko') === s);
+    const total = jumlahUang(t);
+    hasil[s] = {
+      nama: NAMA_SALURAN[s], jumlah: t.length, total,
+      batal: trx.filter((x) => x.batal && (x.saluran ?? 'toko') === s).length,
+      perkiraanKomisi: s === 'toko' ? 0 : perkiraanKomisi(total, setelSaluran(st, s).komisiPersen),
+    };
+  }
+  return hasil;
 }
 
 const ringkasBahan = (st, ids) =>
@@ -182,8 +244,9 @@ function tampilShiftLengkap(st, s) {
   const trx = st.transaksi.filter((t) => t.shiftId === s.id);
   return {
     ...tampilShiftRingkas(st, s),
-    jumlahTransaksi: trx.length,
-    totalPenjualan: trx.reduce((a, t) => a + t.total, 0),
+    jumlahTransaksi: transaksiSah(trx).length,
+    totalPenjualan: jumlahUang(transaksiSah(trx)),
+    perSaluran: perSaluran(st, trx),
     kasAwal: s.kasAwal,
     kasAkhir: s.kasAkhir,
     serahTerima: s.serahTerima && {
@@ -254,7 +317,7 @@ function finalisasiShift(st, ctx, shift, akhirX10, kasAkhir, sumberAkhir) {
   if (shift.hitungKas && kasAkhir !== null && kasAkhir !== undefined) {
     kas = hitungKas({
       kasAwal: shift.kasAwal,
-      penjualanTunai: trx.filter((t) => t.metodeBayar === 'tunai').reduce((a, t) => a + t.total, 0),
+      penjualanTunai: jumlahUang(transaksiSah(trx).filter((t) => t.metodeBayar === 'tunai')), // pesanan aplikasi tidak masuk laci
       pengeluaran: st.pengeluaranKas.filter((p) => p.shiftId === shift.id).reduce((a, p) => a + p.jumlah, 0),
       kasAkhir,
       toleransiRupiah: st.pengaturan.toleransiKasRupiah,
@@ -426,7 +489,14 @@ daftar('PUT', '/pengaturan', OWNER, S.PengaturanBody, ({ st, body }) => {
 // ---------- shift ----------
 daftar('GET', '/shift/aktif', SEMUA, null, ({ st }) => {
   const s = shiftTerbuka(st);
-  return s ? tampilShiftRingkas(st, s) : null;
+  if (!s) return null;
+  const ps = perSaluran(st, st.transaksi.filter((t) => t.shiftId === s.id));
+  return {
+    ...tampilShiftRingkas(st, s),
+    // Jumlah pesanan per aplikasi (tanpa rupiah), untuk dicocokkan crew dengan riwayat di tablet saat tutup shift.
+    pesananOnline: SALURAN_ONLINE.map((x) => ({ saluran: x, nama: NAMA_SALURAN[x], jumlah: ps[x].jumlah, batal: ps[x].batal })),
+    pesananMenunggu: st.pesananMasuk.filter((p) => p.status === 'menunggu').length,
+  };
 });
 
 // Daftar yang perlu dihitung saat buka shift (crew butuh ini sebelum shift ada).
@@ -528,26 +598,36 @@ daftar('GET', '/shift/:id', OWNER, null, ({ st, params }) => {
 });
 
 // ---------- transaksi ----------
-daftar('POST', '/transaksi', SEMUA, S.TransaksiBody, (ctx) => {
-  const { st, body } = ctx;
+// Satu jalur untuk semua transaksi: kasir di toko, pesanan aplikasi yang dicatat manual, dan pesanan otomatis yang diterima.
+//   item       [{ menuId, ukuran, toppingIds, qty }]  → stok dikurangi lewat resep
+//   hargaItem  (opsional, pesanan otomatis) subtotal per item dari aplikasi; tanpa ini harga dihitung dari menu
+function catatTransaksi(ctx, { item: itemBody, saluran = 'toko', nomorPesanan = null, metodeBayar, uangDiterima, hargaItem = null, namaAplikasi = null, pesananId = null }) {
+  const { st } = ctx;
   const shift = wajibShiftTerbuka(st);
   const katalog = { bahan: st.bahan, menu: st.menu, topping: st.topping };
-  const pemakaian = hitungPemakaian(body.item, katalog); // validasi menu/ukuran/topping/qty + resep
+  const pemakaian = hitungPemakaian(itemBody, katalog); // validasi menu/ukuran/topping/qty + resep
 
-  // Harga dihitung di sini, tidak pernah dipercaya dari browser.
-  const item = body.item.map((it) => {
+  // Harga dihitung di sini dari harga saluran, tidak pernah dipercaya dari browser.
+  // Pesanan otomatis memakai harga dari aplikasi (yang dibayar pelanggan; di backend asli datang lewat webhook bertanda tangan).
+  const item = itemBody.map((it, i) => {
     const menu = st.menu.find((m) => m.id === it.menuId);
     const ukuran = menu.ukuran.find((u) => u.nama === it.ukuran);
     const toppings = it.toppingIds.map((tid) => {
       const t = st.topping.find((x) => x.id === tid);
-      return { id: t.id, nama: t.nama, harga: t.harga };
+      return { id: t.id, nama: t.nama, harga: hargaDi(t, saluran) };
     });
-    const hargaSatuan = ukuran.harga + toppings.reduce((a, t) => a + t.harga, 0);
-    return { menuId: menu.id, nama: menu.nama, ukuran: ukuran.nama, toppings, qty: it.qty, hargaSatuan, subtotal: hargaSatuan * it.qty };
+    const hargaSatuan = hargaDi(ukuran, saluran) + toppings.reduce((a, t) => a + t.harga, 0);
+    const subtotal = hargaItem ? hargaItem[i] : hargaSatuan * it.qty;
+    return {
+      menuId: menu.id, nama: menu.nama, ukuran: ukuran.nama, toppings, qty: it.qty,
+      hargaSatuan: hargaItem ? null : hargaSatuan, subtotal,
+      ...(namaAplikasi ? { namaAplikasi: namaAplikasi[i] } : {}),
+    };
   });
-  const total = item.reduce((a, i) => a + i.subtotal, 0);
-  if (body.metodeBayar === 'tunai' && body.uangDiterima < total) {
-    throw validasi('Uang kurang', [{ field: 'uangDiterima', pesan: `Kurang Rp ${(total - body.uangDiterima).toLocaleString('id-ID')}` }]);
+  const total = jumlahUang(item.map((i) => ({ total: i.subtotal })));
+  if (!Number.isInteger(total) || total < 0) throw new Error(`Invariant gagal: total transaksi ${total}`);
+  if (metodeBayar === 'tunai' && uangDiterima < total) {
+    throw validasi('Uang kurang', [{ field: 'uangDiterima', pesan: `Kurang Rp ${(total - uangDiterima).toLocaleString('id-ID')}` }]);
   }
 
   // A-08: tidak memblokir, hanya memberi tahu. Tanpa angka (hitung buta).
@@ -559,17 +639,175 @@ daftar('POST', '/transaksi', SEMUA, S.TransaksiBody, (ctx) => {
     shiftId: shift.id,
     oleh: ctx.pengguna.id,
     pada: ctx.pada,
+    saluran,
+    nomorPesanan,
+    pesananId,
     item,
     total,
-    metodeBayar: body.metodeBayar,
-    uangDiterima: body.uangDiterima ?? null,
-    kembalian: body.metodeBayar === 'tunai' ? body.uangDiterima - total : null,
+    metodeBayar,
+    uangDiterima: uangDiterima ?? null,
+    kembalian: metodeBayar === 'tunai' ? uangDiterima - total : null,
     pemakaian, // salinan (A-07)
+    batal: null,
   };
   st.transaksi.push(trx);
+  return { trx, peringatanMinus };
+}
+
+function tampilStruk(st, trx, peringatanMinus = []) {
+  const { pemakaian: _, shiftId: __, oleh, pesananId: ___, ...struk } = trx;
+  return { ...struk, namaSaluran: NAMA_SALURAN[trx.saluran ?? 'toko'], kasir: namaPengguna(st, oleh), peringatanMinus };
+}
+
+daftar('POST', '/transaksi', SEMUA, S.TransaksiBody, (ctx) => {
+  const { st, body } = ctx;
+  if (adalahOnline(body.saluran)) {
+    const setel = setelSaluran(st, body.saluran);
+    const nama = NAMA_SALURAN[body.saluran];
+    if (!setel.aktif) throw konflik(`${nama} belum diaktifkan owner.`);
+    // Saluran yang tersambung otomatis tidak dicatat manual: pesanannya masuk sendiri, mencatat lagi = dobel.
+    if (setel.mode === 'otomatis') throw konflik(`Pesanan ${nama} masuk otomatis. Terima di halaman Pesanan online.`);
+    if (nomorDipakai(st, body.saluran, body.nomorPesanan)) throw konflik(`Pesanan ${nama} nomor ${body.nomorPesanan} sudah tercatat.`);
+  }
+  const { trx, peringatanMinus } = catatTransaksi(ctx, { ...body, nomorPesanan: body.nomorPesanan ?? null });
   ctx.status = 201;
-  const { pemakaian: _, shiftId: __, oleh, ...struk } = trx;
-  return { ...struk, kasir: namaPengguna(st, oleh), peringatanMinus };
+  return tampilStruk(st, trx, peringatanMinus);
+});
+
+// Pembatalan pesanan aplikasi (dari crew untuk pesanan manual, atau dari aplikasi lewat webhook).
+// Minuman biasanya sudah dibuat: penjualan tidak dihitung, tetapi bahan TETAP tercatat terpakai.
+// Mengembalikan stok akan membuat selisih shift tampak seperti boros.
+function batalkanTransaksi(st, ctx, trx, alasan, sumber) {
+  if (trx.batal) return false;
+  trx.batal = { pada: ctx.pada, oleh: ctx.pengguna?.id ?? null, alasan, sumber };
+  const p = trx.pesananId && st.pesananMasuk.find((x) => x.id === trx.pesananId);
+  if (p) Object.assign(p, { status: 'dibatalkan', alasan });
+  return true;
+}
+
+daftar('POST', '/transaksi/:id/batal', SEMUA, S.BatalBody, ({ st, params, body, pengguna, ...ctx }) => {
+  const trx = st.transaksi.find((t) => t.id === params.id);
+  if (!trx) throw tidakAda('Transaksi');
+  if (!adalahOnline(trx.saluran)) throw konflik('Hanya pesanan aplikasi yang bisa dibatalkan di sini.');
+  if (trx.batal) throw konflik('Transaksi ini sudah dibatalkan.');
+  if (pengguna.peran !== 'owner' && trx.shiftId !== shiftTerbuka(st)?.id) throw konflik('Crew hanya bisa membatalkan pesanan di shift yang sedang berjalan.');
+  batalkanTransaksi(st, { ...ctx, pengguna }, trx, body.alasan, 'kasir');
+  return tampilStruk(st, trx);
+});
+
+daftar('GET', '/transaksi/shift-ini', SEMUA, null, ({ st, query }) => {
+  const s = shiftTerbuka(st);
+  if (!s) return [];
+  return st.transaksi
+    .filter((t) => t.shiftId === s.id && (!query.saluran || t.saluran === query.saluran))
+    .reverse()
+    .map((t) => tampilStruk(st, t));
+});
+
+// ---------- saluran & pesanan online ----------
+function tampilSaluran(st, s, peran) {
+  const setel = setelSaluran(st, s);
+  const dasar = { id: s, nama: NAMA_SALURAN[s], aktif: setel.aktif, mode: setel.mode, tersambungPada: setel.tersambungPada };
+  if (peran !== 'owner') return dasar;
+  // Item dari pesanan yang masih menunggu yang belum dikenali kasir (untuk dipetakan owner).
+  const belum = new Map();
+  for (const p of st.pesananMasuk.filter((x) => x.saluran === s && x.status === 'menunggu')) {
+    for (const { it, cocok } of cocokkanPesanan(st, p)) if (cocok.masalah && !belum.has(it.kode)) belum.set(it.kode, { kode: it.kode, nama: it.nama, masalah: cocok.masalah });
+  }
+  const pemetaan = Object.entries(st.pemetaan[s] ?? {}).map(([kode, t]) => ({ kode, ...t, namaMenu: st.menu.find((m) => m.id === t.menuId)?.nama ?? t.menuId }));
+  return { ...dasar, komisiPersen: setel.komisiPersen, belumDikenali: [...belum.values()], pemetaan };
+}
+
+daftar('GET', '/saluran', SEMUA, null, ({ st, pengguna }) => SALURAN_ONLINE.map((s) => tampilSaluran(st, s, pengguna.peran)));
+
+const wajibSaluran = (s) => {
+  if (!adalahOnline(s)) throw tidakAda('Saluran');
+  return s;
+};
+
+daftar('PUT', '/saluran/:id', OWNER, S.SaluranBody, ({ st, params, body, pada }) => {
+  const s = wajibSaluran(params.id);
+  const lama = setelSaluran(st, s);
+  const otomatis = body.aktif && body.mode === 'otomatis';
+  st.pengaturan.saluran = {
+    ...SALURAN_BAWAAN, ...st.pengaturan.saluran,
+    [s]: { ...body, mode: body.aktif ? body.mode : 'manual', tersambungPada: otomatis ? (lama.mode === 'otomatis' && lama.aktif ? lama.tersambungPada : pada) : null },
+  };
+  return tampilSaluran(st, s, 'owner');
+});
+
+daftar('PUT', '/saluran/:id/pemetaan', OWNER, S.PemetaanBody, ({ st, params, body }) => {
+  const s = wajibSaluran(params.id);
+  const menu = st.menu.find((m) => m.id === body.menuId);
+  if (!menu) throw validasi('Pemetaan tidak valid', [{ field: 'menuId', pesan: 'Menu tidak ditemukan' }]);
+  if (!menu.ukuran.some((u) => u.nama === body.ukuran)) throw validasi('Pemetaan tidak valid', [{ field: 'ukuran', pesan: `Ukuran "${body.ukuran}" tidak ada di ${menu.nama}` }]);
+  st.pemetaan[s] = { ...st.pemetaan[s], [body.kode]: { menuId: menu.id, ukuran: body.ukuran, kali: body.kali } };
+  return tampilSaluran(st, s, 'owner');
+});
+
+// Pintu masuk pesanan dari aplikasi (webhook). Di mock dipanggil tombol "kirim pesanan contoh" dan pembuat data demo.
+// Backend asli: tanpa sesi pengguna, diverifikasi lewat tanda tangan platform.
+daftar('POST', '/integrasi/:saluran/pesanan', SEMUA, S.PesananAplikasiBody, (ctx) => {
+  const { st, params, body } = ctx;
+  const s = wajibSaluran(params.saluran);
+  const setel = setelSaluran(st, s);
+  if (!setel.aktif || setel.mode !== 'otomatis') throw konflik(`${NAMA_SALURAN[s]} belum tersambung ke kasir.`);
+  // Webhook bisa dikirim ulang oleh platform (jaringan putus, timeout). Nomor yang sama → data yang sudah ada, bukan pesanan baru.
+  const ada = nomorDipakai(st, s, body.nomorPesanan);
+  if (ada && ada.masukPada) return { ...tampilPesanan(st, ada), duplikat: true };
+  if (ada) throw konflik(`Nomor ${body.nomorPesanan} sudah tercatat manual di kasir.`);
+  const p = { id: ctx.id('pesanan'), saluran: s, ...body, masukPada: ctx.pada, status: 'menunggu', diprosesOleh: null, diprosesPada: null, transaksiId: null };
+  st.pesananMasuk.push(p);
+  ctx.status = 201;
+  return { ...tampilPesanan(st, p), duplikat: false };
+});
+
+daftar('POST', '/integrasi/:saluran/batal', SEMUA, S.PembatalanAplikasiBody, (ctx) => {
+  const { st, params, body } = ctx;
+  const s = wajibSaluran(params.saluran);
+  const p = st.pesananMasuk.find((x) => x.saluran === s && x.nomorPesanan === body.nomorPesanan);
+  if (!p) throw tidakAda('Pesanan');
+  if (p.status === 'menunggu') Object.assign(p, { status: 'dibatalkan', alasan: body.alasan, diprosesPada: ctx.pada });
+  else if (p.status === 'diterima') batalkanTransaksi(st, ctx, st.transaksi.find((t) => t.id === p.transaksiId), body.alasan, 'aplikasi');
+  // ditolak / sudah dibatalkan: tidak ada yang berubah (idempoten)
+  return tampilPesanan(st, p);
+});
+
+daftar('GET', '/pesanan-online', SEMUA, null, ({ st }) => {
+  const menunggu = st.pesananMasuk.filter((p) => p.status === 'menunggu');
+  const selesai = st.pesananMasuk.filter((p) => p.status !== 'menunggu').slice(-20);
+  return { menunggu: menunggu.map((p) => tampilPesanan(st, p)), riwayat: selesai.reverse().map((p) => tampilPesanan(st, p)) };
+});
+
+const wajibMenunggu = (st, id) => {
+  const p = st.pesananMasuk.find((x) => x.id === id);
+  if (!p) throw tidakAda('Pesanan');
+  if (p.status !== 'menunggu') throw konflik(`Pesanan ${p.nomorPesanan} sudah ${p.status}.`);
+  return p;
+};
+
+daftar('POST', '/pesanan-online/:id/terima', SEMUA, null, (ctx) => {
+  const { st, params } = ctx;
+  const p = wajibMenunggu(st, params.id);
+  wajibShiftTerbuka(st); // A-22: pesanan menunggu sampai ada shift terbuka
+  const baris = cocokkanPesanan(st, p);
+  const salah = baris.filter((b) => b.cocok.masalah);
+  // A-21: menu yang tidak dikenali tidak boleh diterima, supaya stok tidak berkurang dengan resep yang salah.
+  if (salah.length) throw konflik(`Ada menu yang belum dikenali kasir: ${salah.map((b) => b.it.nama).join(', ')}. Minta owner memetakannya.`);
+  const { trx, peringatanMinus } = catatTransaksi(ctx, {
+    item: baris.map(({ it, cocok }) => ({ menuId: cocok.menuId, ukuran: cocok.ukuran, toppingIds: cocok.toppingIds, qty: it.qty * cocok.kali })),
+    hargaItem: baris.map(({ it }) => it.harga * it.qty),
+    namaAplikasi: baris.map(({ it }) => it.nama),
+    saluran: p.saluran, nomorPesanan: p.nomorPesanan, metodeBayar: 'aplikasi', pesananId: p.id,
+  });
+  Object.assign(p, { status: 'diterima', diprosesOleh: ctx.pengguna.id, diprosesPada: ctx.pada, transaksiId: trx.id });
+  return { pesanan: tampilPesanan(st, p), struk: tampilStruk(st, trx, peringatanMinus) };
+});
+
+daftar('POST', '/pesanan-online/:id/tolak', SEMUA, S.TolakPesananBody, (ctx) => {
+  const p = wajibMenunggu(ctx.st, ctx.params.id);
+  Object.assign(p, { status: 'ditolak', alasan: ctx.body.alasan, diprosesOleh: ctx.pengguna.id, diprosesPada: ctx.pada });
+  return tampilPesanan(ctx.st, p);
 });
 
 // ---------- barang masuk ----------
@@ -661,20 +899,31 @@ daftar('GET', '/laporan/harian', SEMUA, null, ({ st, query, pengguna, pada }) =>
   if (pengguna.peran !== 'owner' && tanggal !== hariIni) throw galat(403, 'DILARANG', 'Crew hanya bisa melihat laporan hari ini');
 
   const trx = st.transaksi.filter((t) => tanggalLokal(t.pada, zona) === tanggal);
-  const pakai = jumlahkanPemakaian(trx);
+  const sah = transaksiSah(trx);
+  const pakai = jumlahkanPemakaian(trx); // termasuk pesanan batal: bahannya tetap terpakai
+  const ps = perSaluran(st, trx);
+  const komisi = SALURAN_ONLINE.reduce((a, s) => a + ps[s].perkiraanKomisi, 0);
   return {
     tanggal,
-    jumlahTransaksi: trx.length,
-    totalPenjualan: trx.reduce((a, t) => a + t.total, 0),
+    jumlahTransaksi: sah.length,
+    totalPenjualan: jumlahUang(sah),
     perMetode: {
-      tunai: trx.filter((t) => t.metodeBayar === 'tunai').reduce((a, t) => a + t.total, 0),
-      qris: trx.filter((t) => t.metodeBayar === 'qris').reduce((a, t) => a + t.total, 0),
+      tunai: jumlahUang(sah.filter((t) => t.metodeBayar === 'tunai')),
+      qris: jumlahUang(sah.filter((t) => t.metodeBayar === 'qris')),
+      aplikasi: jumlahUang(sah.filter((t) => t.metodeBayar === 'aplikasi')),
     },
+    perSaluran: ps,
+    perkiraanKomisi: komisi,
+    perkiraanBersih: jumlahUang(sah) - komisi,
     pemakaian: Object.entries(pakai).map(([id, x10]) => {
       const b = cariBahan(st, id);
       return { bahanId: id, nama: b?.nama ?? id, satuanDasar: b?.satuanDasar ?? '', jumlah: H(x10) };
     }),
-    transaksi: [...trx].reverse().map((t) => ({ id: t.id, pada: t.pada, total: t.total, metodeBayar: t.metodeBayar, kasir: namaPengguna(st, t.oleh), item: t.item })),
+    transaksi: [...trx].reverse().map((t) => ({
+      id: t.id, pada: t.pada, total: t.total, metodeBayar: t.metodeBayar, kasir: namaPengguna(st, t.oleh), item: t.item,
+      saluran: t.saluran ?? 'toko', namaSaluran: NAMA_SALURAN[t.saluran ?? 'toko'], nomorPesanan: t.nomorPesanan ?? null,
+      otomatis: Boolean(t.pesananId), batal: t.batal ? { alasan: t.batal.alasan, sumber: t.batal.sumber } : null,
+    })),
   };
 });
 
@@ -701,7 +950,7 @@ function periksaRespons(data, peran) {
   jalan(data, 'data');
 }
 
-const VERSI_DATA = 3;
+const VERSI_DATA = 4;
 const BATAS_BUKA_GANDA_MS = 10 * 60 * 1000;
 
 // salin = false: state diubah langsung tanpa disalin (tidak atomik). Hanya untuk pembuat data demo.

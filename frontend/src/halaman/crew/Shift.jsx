@@ -85,6 +85,24 @@ function PilihLanjutan({ shift, onPilih }) {
   );
 }
 
+// Jumlah pesanan per aplikasi di shift ini, untuk dicocokkan dengan riwayat di tablet aplikasi sebelum tutup.
+function CocokkanAplikasi() {
+  const { data } = useData('/shift/aktif');
+  if (!data?.pesananOnline) return null;
+  const ada = data.pesananOnline.filter((x) => x.jumlah > 0 || x.batal > 0);
+  if (ada.length === 0 && !data.pesananMenunggu) return null;
+  return (
+    <div className="kartu">
+      <strong>Cocokkan dengan tablet aplikasi</strong>
+      <p className="bantuan">Jumlah pesanan yang tercatat di kasir shift ini. Jika berbeda dengan riwayat di aplikasi, ada pesanan yang belum dicatat.</p>
+      <ul>
+        {ada.map((x) => <li key={x.saluran}>{x.nama}: {x.jumlah} pesanan{x.batal > 0 && ` (+${x.batal} batal)`}</li>)}
+      </ul>
+      {data.pesananMenunggu > 0 && <Pesan><Link to="/crew/pesanan-online">{data.pesananMenunggu} pesanan online masih menunggu.</Link> Jika ditutup sekarang, pesanan itu menunggu shift berikutnya.</Pesan>}
+    </div>
+  );
+}
+
 function TutupShift({ shift, onSelesai, onBukaBaru }) {
   const { api } = useSesi();
   return (
@@ -99,6 +117,7 @@ function TutupShift({ shift, onSelesai, onBukaBaru }) {
           ? 'Lakukan di akhir shift. Ini tutup outlet, jadi semua bahan dihitung.'
           : 'Lakukan di akhir shift. Hitung bahan kunci saja.'}
       </p>
+      <CocokkanAplikasi />
       <FormHitung
         bahan={shift.bahanTutup}
         judul={shift.tutupSemuaBahan ? `Hitung semua bahan (${shift.bahanTutup.length})` : `Hitung bahan kunci (${shift.bahanTutup.length})`}

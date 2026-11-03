@@ -28,11 +28,13 @@ Di aplikasi ini **crew tidak pernah menghitung satuan**. Owner menulis resep sek
 - **Kasir**: menu per kategori, ukuran (Regular/Large, Panas/Dingin), topping, keranjang, bayar tunai dengan kembalian atau QRIS, struk.
 - **Buka/tutup shift dengan hitung buta**: crew menghitung bahan kunci tanpa melihat angka sistem. Setiap pergantian shift menghasilkan hitungan oleh orang berbeda, jadi selisih bisa ditunjuk ke satu shift.
 - Shift yang lupa ditutup tetap tercatat; kas laci dihitung saat buka dan tutup.
+- **Pesanan online**: pesanan GoFood/GrabFood masuk sendiri ke antrean; crew tekan *Terima* dan stok berkurang lewat resep yang sama. ShopeeFood (atau aplikasi yang belum tersambung) dicatat di kasir dengan nomor pesanan.
 
 **Owner**
 - **Detail shift**: `seharusnya = awal + masuk − pakai`, `selisih = akhir − seharusnya`, dengan status *wajar* / *perlu dicek* berdasarkan toleransi per bahan.
 - **Bahan & satuan**: satuan dasar bebas, satuan bantu dengan konversi wajib (sendok, garis gelas, karung, panci), toleransi, saran toleransi dari riwayat 10+ shift.
-- **Menu & resep**: resep per ukuran dengan hasil konversi langsung di setiap baris.
+- **Menu & resep**: resep per ukuran dengan hasil konversi langsung di setiap baris, harga per aplikasi (kosong = harga toko).
+- **Aplikasi online**: sambungkan/putuskan per aplikasi, perkiraan komisi, pemetaan menu yang dibuat langsung di aplikasi (misalnya paket = 2 gelas). Laporan per saluran dengan perkiraan pendapatan bersih.
 
 ![Detail shift: creamer boros 12,5% ditandai, bahan lain wajar](docs/gambar/detail-shift.png)
 
@@ -45,6 +47,21 @@ Di aplikasi ini **crew tidak pernah menghitung satuan**. Owner menulis resep sek
 | Dapur Mie Rasa | ayam per porsi, telur & bakso per butir, pangsit per lembar |
 
 ![Editor resep dengan konversi langsung](docs/gambar/editor-resep.png)
+
+### Pesanan dari aplikasi pesan-antar
+
+> **Di demo, sambungan ke GoFood dan GrabFood adalah simulasi.** Panel "Simulasi aplikasi" berperan sebagai aplikasinya dan memanggil endpoint yang sama dengan webhook sungguhan. Sambungan nyata membutuhkan pendaftaran di platform dan server backend; rencananya ada di [`docs/backend/INTEGRASI_APLIKASI.md`](docs/backend/INTEGRASI_APLIKASI.md).
+
+```
+Pelanggan pesan di GoFood ─▶ webhook ke server kasir ─▶ antrean "Pesanan online" ─▶ crew Terima ─▶ transaksi + stok berkurang
+                              nomor sama dikirim ulang → tidak dobel
+                              menu dibuat di aplikasi  → dipetakan owner sekali, sebelum itu tidak bisa diterima
+                              dibatalkan setelah dibuat → penjualan batal, bahan tetap terpakai
+```
+
+![Pesanan online: simulasi aplikasi, data yang dikirim, antrean dengan menu yang belum dikenali](docs/gambar/pesanan-online.png)
+
+![Owner: status sambungan per aplikasi dan pemetaan menu](docs/gambar/aplikasi-online.png)
 
 ## Menjalankan
 
@@ -67,7 +84,7 @@ skema/       zod untuk body request                                    ← dipak
 frontend/src/
   api/       klien.js (mock | real), mock/ (router, data demo, katalog per usaha)
   merek/     profil usaha → variabel CSS (cek kontras WCAG)
-  halaman/   crew/ (kasir, shift), owner/ (ringkasan, detail shift, bahan, menu, pengaturan)
+  halaman/   crew/ (kasir, shift), owner/ (ringkasan, detail shift, bahan, menu, aplikasi, pengaturan), PesananOnline
 ```
 
 - Jumlah bahan disimpan sebagai bilangan bulat ×10 (kelipatan 0,1) supaya `0.1 + 0.2` tetap `0.3`.

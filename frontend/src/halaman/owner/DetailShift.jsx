@@ -27,6 +27,12 @@ export default function DetailShift() {
         {s.status === 'ditutup' && <> · ditutup oleh <strong>{s.ditutupOleh}</strong> ({waktu(s.ditutupPada)})</>}
         {' · '}{s.jumlahTransaksi} transaksi, {formatRupiah(s.totalPenjualan)}
       </p>
+      {s.perSaluran && (
+        <p className="bantuan">
+          {Object.values(s.perSaluran).filter((x) => x.jumlah > 0 || x.batal > 0).map((x) => `${x.nama} ${x.jumlah}${x.batal ? ` (+${x.batal} batal)` : ''}`).join(' · ')}
+          {' '}— pesanan aplikasi tidak masuk laci kas; pesanan batal tetap memakai bahan.
+        </p>
+      )}
 
       {s.status === 'terbuka' && <Pesan>Shift masih berjalan. Selisih dihitung setelah shift ditutup.</Pesan>}
       {s.status === 'tidak_ditutup' && (

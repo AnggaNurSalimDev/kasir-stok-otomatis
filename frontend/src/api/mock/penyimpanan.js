@@ -34,7 +34,7 @@ export function penyimpananObjek() {
   };
 }
 
-export const AWALAN_KUNCI = 'kasir-demo-v3:';
+export const AWALAN_KUNCI = 'kasir-demo-v4:';
 const AWALAN_LAMA = /^kasir-demo-v\d+:/;
 
 // localStorage bisa melempar (mode privat, kuota penuh). Galat baca dianggap "belum ada data".

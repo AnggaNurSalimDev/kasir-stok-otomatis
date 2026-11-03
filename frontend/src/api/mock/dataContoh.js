@@ -14,23 +14,41 @@
 import { buatMockApi } from './server.js';
 import { penyimpananObjek } from './penyimpanan.js';
 import { KATALOG } from './katalog/index.js';
+import { buatPesananContoh, nomorPesanan } from './pesananContoh.js';
 
 const MODAL_LACI = 200000;
 // Satuan yang dihitung pas (tidak ada takaran yang meleset).
 const SATUAN_HITUNGAN = new Set(['pcs', 'keping', 'butir', 'lembar', 'buah']);
 
-export function buatKatalog(usaha = 'teh') {
+// Harga di aplikasi contoh: naik ±15–20% untuk menutup komisi, dibulatkan ke atas Rp 500.
+const KENAIKAN = { gofood: 1.2, grabfood: 1.2, shopeefood: 1.15 };
+const hargaSaluran = (harga) => Object.fromEntries(Object.entries(KENAIKAN).map(([s, f]) => [s, Math.ceil((harga * f) / 500) * 500]));
+
+export function buatKatalog(usaha = 'teh', sekarang = new Date()) {
   const k = KATALOG[usaha];
   if (!k) throw new TypeError(`Jenis usaha tidak dikenal: ${usaha}`);
+  const menu = structuredClone(k.menu).map((m) => ({ ...m, ukuran: m.ukuran.map((u) => ({ ...u, hargaSaluran: hargaSaluran(u.harga) })) }));
+  const topping = structuredClone(k.topping).map((t) => ({ ...t, hargaSaluran: hargaSaluran(t.harga) }));
+  const sejak = new Date(sekarang.getTime() - 40 * 86400000).toISOString();
   return {
-    versi: 3,
+    versi: 4,
     usaha,
     urut: 0,
     pengguna: structuredClone(k.pengguna),
     bahan: structuredClone(k.bahan),
-    menu: structuredClone(k.menu),
-    topping: structuredClone(k.topping),
-    pengaturan: { shift: [{ nama: 'Pagi' }, { nama: 'Sore' }], hitungKas: true, toleransiKasRupiah: 0, hitungSemuaBahan: 'outlet', zonaWaktu: 'Asia/Jakarta' },
+    menu,
+    topping,
+    pengaturan: {
+      shift: [{ nama: 'Pagi' }, { nama: 'Sore' }], hitungKas: true, toleransiKasRupiah: 0, hitungSemuaBahan: 'outlet', zonaWaktu: 'Asia/Jakarta',
+      // GoFood & GrabFood "tersambung" (simulasi), ShopeeFood dicatat manual. Komisi = angka contoh.
+      saluran: {
+        gofood: { aktif: true, mode: 'otomatis', komisiPersen: 20, tersambungPada: sejak },
+        grabfood: { aktif: true, mode: 'otomatis', komisiPersen: 20, tersambungPada: sejak },
+        shopeefood: { aktif: true, mode: 'manual', komisiPersen: 20, tersambungPada: null },
+      },
+    },
+    pesananMasuk: [],
+    pemetaan: {},
     stok: Object.fromEntries(k.bahan.map((b) => [b.id, 0])),
     shift: [],
     transaksi: [],
@@ -74,6 +92,8 @@ function jadwalKejadian(jumlahShift) {
   pasang(21, { takaranKurang: 0.08 });
   pasang(27, { tidakDitutup: true });
   pasang(44, { boros: 0.12 });
+  pasang(12, { batalAplikasi: true });
+  pasang(18, { tolakOnline: true });
   return jadwal;
 }
 
@@ -94,7 +114,7 @@ export async function buatDataDemo({ sekarang = new Date(), hari = 30, benih = 2
   // Aman di sini karena galat apa pun saat membuat data demo adalah bug dan langsung dilempar.
   const memori = penyimpananObjek();
   let jam = new Date(sekarang);
-  const api = buatMockApi({ penyimpanan: memori, buatDataAwal: () => buatKatalog(usaha), jedaMs: [0, 0], sekarang: () => jam, salin: false });
+  const api = buatMockApi({ penyimpanan: memori, buatDataAwal: () => buatKatalog(usaha, sekarang), jedaMs: [0, 0], sekarang: () => jam, salin: false });
   const st = () => memori.bacaObjek();
   const panggil = async (alamat, method, body, penggunaId) => (await api.panggil(alamat, { method, body, penggunaId })).data;
   const maju = (menit) => (jam = new Date(jam.getTime() + menit * 60000));
@@ -108,6 +128,7 @@ export async function buatDataDemo({ sekarang = new Date(), hari = 30, benih = 2
   const pakaiTerakhir = {}; // ×10, pemakaian satu shift terbesar sejauh ini, per bahan
   const hitung = (ids) => Object.fromEntries(ids.map((id) => [id, Math.round(fisik[id] / 10)])); // dihitung per 1 satuan
 
+  let nomorUrut = 100230; // nomor pesanan aplikasi
   const crew = K.pengguna.filter((p) => p.peran === 'crew').map((p) => p.id);
   const satuanBeli = (b) => [...b.satuanBantu].sort((x, y) => y.konversi - x.konversi)[0];
 
@@ -176,25 +197,52 @@ export async function buatDataDemo({ sekarang = new Date(), hari = 30, benih = 2
     const akhirShift = jamJakarta(mulai, d, pagi ? 14 : 21, 30).getTime();
     const akhirJual = hariIniTerbuka ? Math.min(akhirShift, sekarang.getTime() - 2 * 60000) : akhirShift;
     const jarak = Math.max(0, akhirJual - awalJual) / jumlahTrx;
+    let sudahBatal = false;
+    let sudahTolak = false;
     for (let t = 0; t < jumlahTrx; t++) {
       jam = new Date(awalJual + t * jarak + acak() * jarak * 0.8);
-      const item = [];
-      const jumlahBaris = acak() < 0.3 ? 2 : 1;
-      for (let n = 0; n < jumlahBaris; n++) {
-        const menu = pilih(katalog.menu);
-        const toppingIds = menu.toppingIds.length && acak() < 0.4 ? [pilih(menu.toppingIds)] : [];
-        const baru = { menuId: menu.id, ukuran: pilih(menu.ukuran).nama, toppingIds, qty: acak() < 0.2 ? 2 : 1 };
-        if (!item.some((x) => x.menuId === baru.menuId && x.ukuran === baru.ukuran && x.toppingIds.join() === baru.toppingIds.join())) item.push(baru);
+      // ±30% pesanan dari aplikasi: GoFood & GrabFood masuk otomatis, ShopeeFood dicatat manual.
+      const r = acak();
+      const saluran = r < 0.7 ? 'toko' : r < 0.82 ? 'gofood' : r < 0.92 ? 'grabfood' : 'shopeefood';
+
+      if (saluran === 'gofood' || saluran === 'grabfood') {
+        const pesanan = buatPesananContoh({ menu: katalog.menu, topping: katalog.topping, saluran, nomor: ++nomorUrut, acak });
+        const masuk = await panggil(`/integrasi/${saluran}/pesanan`, 'POST', pesanan, oleh);
+        maju(1);
+        if (khusus.tolakOnline && !sudahTolak) {
+          sudahTolak = true;
+          await panggil(`/pesanan-online/${masuk.id}/tolak`, 'POST', { alasan: 'Antrean terlalu panjang' }, oleh);
+          continue; // tidak dibuat: stok fisik tidak berkurang
+        }
+        await panggil(`/pesanan-online/${masuk.id}/terima`, 'POST', undefined, oleh);
+        if (khusus.batalAplikasi && !sudahBatal) {
+          sudahBatal = true; // minuman sudah dibuat, lalu pelanggan membatalkan di aplikasi
+          maju(4);
+          await panggil(`/integrasi/${saluran}/batal`, 'POST', { nomorPesanan: pesanan.nomorPesanan, alasan: 'Dibatalkan pelanggan' }, oleh);
+        }
+      } else {
+        const item = [];
+        const jumlahBaris = acak() < 0.3 ? 2 : 1;
+        for (let n = 0; n < jumlahBaris; n++) {
+          const menu = pilih(katalog.menu);
+          const toppingIds = menu.toppingIds.length && acak() < 0.4 ? [pilih(menu.toppingIds)] : [];
+          const baru = { menuId: menu.id, ukuran: pilih(menu.ukuran).nama, toppingIds, qty: acak() < 0.2 ? 2 : 1 };
+          if (!item.some((x) => x.menuId === baru.menuId && x.ukuran === baru.ukuran && x.toppingIds.join() === baru.toppingIds.join())) item.push(baru);
+        }
+        if (saluran === 'shopeefood') {
+          await panggil('/transaksi', 'POST', { item, saluran, nomorPesanan: nomorPesanan('shopeefood', ++nomorUrut), metodeBayar: 'aplikasi' }, oleh);
+        } else {
+          const total = item.reduce((a, it) => {
+            const m = katalog.menu.find((x) => x.id === it.menuId);
+            const tp = it.toppingIds.reduce((s, tid) => s + katalog.topping.find((x) => x.id === tid).harga, 0);
+            return a + (m.ukuran.find((u) => u.nama === it.ukuran).harga + tp) * it.qty;
+          }, 0);
+          const tunai = acak() < 0.55;
+          const uang = Math.ceil(total / 5000) * 5000 + (acak() < 0.3 ? 5000 : 0);
+          await panggil('/transaksi', 'POST', tunai ? { item, metodeBayar: 'tunai', uangDiterima: uang } : { item, metodeBayar: 'qris' }, oleh);
+          if (tunai) kasLaci += total;
+        }
       }
-      const total = item.reduce((a, it) => {
-        const m = katalog.menu.find((x) => x.id === it.menuId);
-        const tp = it.toppingIds.reduce((s, tid) => s + katalog.topping.find((x) => x.id === tid).harga, 0);
-        return a + (m.ukuran.find((u) => u.nama === it.ukuran).harga + tp) * it.qty;
-      }, 0);
-      const tunai = acak() < 0.55;
-      const uang = Math.ceil(total / 5000) * 5000 + (acak() < 0.3 ? 5000 : 0);
-      await panggil('/transaksi', 'POST', tunai ? { item, metodeBayar: 'tunai', uangDiterima: uang } : { item, metodeBayar: 'qris' }, oleh);
-      if (tunai) kasLaci += total;
 
       // Pemakaian fisik = resep × faktor takaran crew (tidak pernah tepat).
       const trx = st().transaksi.at(-1);
@@ -208,6 +256,13 @@ export async function buatDataDemo({ sekarang = new Date(), hari = 30, benih = 2
         // Invariant simulasi: dapur tidak bisa memakai bahan yang tidak ada. Jika ini terjadi, restok di atas kurang.
         if (fisik[id] < 0) throw new Error(`Data demo ${usaha}: stok fisik ${id} habis di shift ${i}; perbesar fisikAwal atau restok`);
       }
+    }
+    if (hariIniTerbuka) {
+      // Dua pesanan baru saja masuk dan belum diterima; satu berisi menu yang dibuat langsung di aplikasi.
+      jam = new Date(sekarang.getTime() - 3 * 60000);
+      await panggil('/integrasi/gofood/pesanan', 'POST', buatPesananContoh({ menu: katalog.menu, topping: katalog.topping, saluran: 'gofood', nomor: ++nomorUrut, acak }), oleh);
+      jam = new Date(sekarang.getTime() - 60000);
+      await panggil('/integrasi/grabfood/pesanan', 'POST', buatPesananContoh({ menu: katalog.menu, topping: katalog.topping, saluran: 'grabfood', nomor: ++nomorUrut, acak, tidakDikenal: true }), oleh);
     }
     if (khusus.kasHilang) kasLaci -= khusus.kasHilang;
     const trxShift = st().transaksi.filter((t) => t.shiftId === st().shift.at(-1).id);

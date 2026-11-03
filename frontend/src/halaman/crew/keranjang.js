@@ -3,6 +3,8 @@
 //
 //   item = { menuId, ukuran, toppingIds: [...], qty }
 
+import { hargaDi } from '../../../../logika/saluran.js';
+
 const MAKS_QTY = 99;
 
 // Kunci konfigurasi: menu + ukuran + topping (urutan topping tidak berpengaruh).
@@ -31,24 +33,24 @@ export function ubahQty(keranjang, kunci, qty) {
   return keranjang.map((x) => (kunciItem(x) === kunci ? { ...x, qty: Math.min(MAKS_QTY, qty) } : x));
 }
 
-// Harga satu item: harga ukuran + harga topping. null jika menu/ukuran/topping tidak dikenal
+// Harga satu item di satu saluran: harga ukuran + harga topping. null jika menu/ukuran/topping tidak dikenal
 // (misalnya katalog berubah di tempat lain); kasir lalu meminta item itu dihapus.
-export function hargaSatuan(item, menuById, toppingById) {
+export function hargaSatuan(item, menuById, toppingById, saluran = 'toko') {
   const menu = menuById.get(item.menuId);
   const ukuran = menu?.ukuran.find((u) => u.nama === item.ukuran);
   if (!ukuran) return null;
-  let harga = ukuran.harga;
+  let harga = hargaDi(ukuran, saluran);
   for (const tid of item.toppingIds) {
     const t = toppingById.get(tid);
     if (!t) return null;
-    harga += t.harga;
+    harga += hargaDi(t, saluran);
   }
   return harga;
 }
 
-export function total(keranjang, menuById, toppingById) {
+export function total(keranjang, menuById, toppingById, saluran = 'toko') {
   return keranjang.reduce((jumlah, it) => {
-    const h = hargaSatuan(it, menuById, toppingById);
+    const h = hargaSatuan(it, menuById, toppingById, saluran);
     return h === null ? jumlah : jumlah + h * it.qty;
   }, 0);
 }

@@ -14,6 +14,8 @@ import Bahan from './halaman/owner/Bahan.jsx';
 import Menu from './halaman/owner/Menu.jsx';
 import Pengaturan from './halaman/owner/Pengaturan.jsx';
 import DetailShift from './halaman/owner/DetailShift.jsx';
+import Aplikasi from './halaman/owner/Aplikasi.jsx';
+import PesananOnline from './halaman/PesananOnline.jsx';
 
 function Tata({ peran }) {
   return (
@@ -41,6 +43,7 @@ export default function App() {
       <Route path="/crew" element={<Tata peran="crew" />}>
         <Route index element={<Navigate to="kasir" replace />} />
         <Route path="kasir" element={<Kasir />} />
+        <Route path="pesanan-online" element={<PesananOnline />} />
         <Route path="shift" element={<Shift />} />
         <Route path="barang-masuk" element={<BarangMasuk />} />
         <Route path="pengeluaran" element={<PengeluaranKas />} />
@@ -55,6 +58,8 @@ export default function App() {
         <Route path="pengaturan" element={<Pengaturan />} />
         <Route path="shift/:id" element={<DetailShift />} />
         <Route path="laporan" element={<Laporan />} />
+        <Route path="aplikasi" element={<Aplikasi />} />
+        <Route path="pesanan-online" element={<PesananOnline />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

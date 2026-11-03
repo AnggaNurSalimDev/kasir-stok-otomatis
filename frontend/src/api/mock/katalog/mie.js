@@ -63,8 +63,8 @@ export default {
     { id: 'tpMie', nama: 'Extra Mie', harga: 5000, resep: [r('mie', 1, 'gulung')] },
   ],
   fisikAwal: {
-    mie: 5000, ayam: 40, kuah: 10000, sawi: 1000, telur: 30, bakso: 100, pangsit: 50, minyakBawang: 600, kecap: 600,
-    daunBawang: 200, teh: 6000, gula: 10000, jeruk: 24,
+    mie: 8000, ayam: 64, kuah: 16000, sawi: 1600, telur: 72, bakso: 256, pangsit: 128, minyakBawang: 960, kecap: 960,
+    daunBawang: 320, teh: 9600, gula: 16000, jeruk: 58,
   },
   kejadian: {
     boros: 'mie',

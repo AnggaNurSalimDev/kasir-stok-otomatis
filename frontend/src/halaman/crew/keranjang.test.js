@@ -76,3 +76,15 @@ describe('saranUang', () => {
 it('keBody hanya membawa field kontrak', () => {
   expect(keBody([{ ...item(), harga: 1, nama: 'x' }])).toEqual([{ menuId: 'thaiTea', ukuran: 'Regular', toppingIds: [], qty: 1 }]);
 });
+
+describe('harga per saluran', () => {
+  it('memakai harga aplikasi jika diisi, harga toko jika kosong', async () => {
+    const { hargaSatuan: h, total: t } = await import('./keranjang.js');
+    const menuById = new Map([['m', { id: 'm', ukuran: [{ nama: 'R', harga: 10000, hargaSaluran: { gofood: 12000 } }] }]]);
+    const toppingById = new Map([['tp', { id: 'tp', harga: 2000 }]]);
+    const item = { menuId: 'm', ukuran: 'R', toppingIds: ['tp'], qty: 2 };
+    expect(h(item, menuById, toppingById)).toBe(12000);
+    expect(h(item, menuById, toppingById, 'gofood')).toBe(14000);
+    expect(t([item], menuById, toppingById, 'shopeefood')).toBe(24000);
+  });
+});

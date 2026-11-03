@@ -175,3 +175,16 @@ details.kartu summary { cursor: pointer; font-weight: 600; }
 .pilihan-besar { display: grid; gap: 0.75rem; }
 .pilihan-besar .tombol-besar { margin: 0; }
 .tautan.tanpa-jarak { margin-left: 0; }
+
+/* ---------- pesanan online ---------- */
+.simulasi { border-style: dashed; }
+.simulasi summary { cursor: pointer; margin-bottom: 0.5rem; }
+.kode, .alur { background: var(--panel); border: 1px solid var(--garis); border-radius: var(--radius-kecil); padding: 0.75rem; overflow-x: auto; font-size: 0.85rem; line-height: 1.4; }
+.alur { margin: 0 0 1rem; }
+.kartu-pesanan h3 { font-size: 1rem; }
+.daftar-pesanan { list-style: none; padding: 0; margin: 0.5rem 0; }
+.daftar-pesanan li { display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.4rem 0; border-bottom: 1px solid var(--garis); }
+.baris-batal td { color: var(--redup); }
+.harga-saluran { margin: 0.25rem 0 0.75rem; }
+.harga-saluran summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+.lencana-netral { background: var(--panel); color: var(--redup); border: 1px solid var(--garis); }

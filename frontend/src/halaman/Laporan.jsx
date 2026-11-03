@@ -37,7 +37,34 @@ export default function Laporan() {
             <div className="kartu"><small>Penjualan</small><strong>{formatRupiah(data.totalPenjualan)}</strong></div>
             <div className="kartu"><small>Tunai</small><strong>{formatRupiah(data.perMetode.tunai)}</strong></div>
             <div className="kartu"><small>QRIS</small><strong>{formatRupiah(data.perMetode.qris)}</strong></div>
+            <div className="kartu"><small>Aplikasi</small><strong>{formatRupiah(data.perMetode.aplikasi)}</strong></div>
           </div>
+
+          <h2 className="subjudul">Per saluran</h2>
+          <div className="tabel-gulir">
+            <table className="tabel-kecil">
+              <thead>
+                <tr><th>Saluran</th><th className="kanan">Pesanan</th><th className="kanan">Penjualan</th>{owner && <><th className="kanan">Perkiraan komisi</th><th className="kanan">Perkiraan bersih</th></>}<th className="kanan">Batal</th></tr>
+              </thead>
+              <tbody>
+                {Object.entries(data.perSaluran).map(([id, x]) => (
+                  <tr key={id}>
+                    <td>{x.nama}</td>
+                    <td className="kanan">{x.jumlah}</td>
+                    <td className="kanan">{formatRupiah(x.total)}</td>
+                    {owner && <><td className="kanan">{id === 'toko' ? '–' : formatRupiah(x.perkiraanKomisi)}</td><td className="kanan">{formatRupiah(x.total - x.perkiraanKomisi)}</td></>}
+                    <td className="kanan">{x.batal || '–'}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {owner && (
+                <tfoot>
+                  <tr><td><strong>Total</strong></td><td /><td className="kanan"><strong>{formatRupiah(data.totalPenjualan)}</strong></td><td className="kanan">{formatRupiah(data.perkiraanKomisi)}</td><td className="kanan"><strong>{formatRupiah(data.perkiraanBersih)}</strong></td><td /></tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+          {owner && <p className="bantuan">Komisi memakai persen yang diisi di halaman Aplikasi online, jadi hanya perkiraan. Angka pasti ada di laporan masing-masing aplikasi. Pesanan batal tidak dihitung sebagai penjualan, tetapi bahannya tetap tercatat terpakai.</p>}
 
           <h2 className="subjudul">Pemakaian bahan menurut resep</h2>
           <p className="bantuan">Dihitung dari transaksi. Selisih dengan stok fisik ada di detail shift (owner).</p>
@@ -62,17 +89,20 @@ export default function Laporan() {
           ) : (
             <div className="tabel-gulir">
               <table>
-                <thead><tr><th>Jam</th><th>Pesanan</th><th>Bayar</th><th>Kasir</th><th className="kanan">Total</th></tr></thead>
+                <thead><tr><th>Jam</th><th>Pesanan</th><th>Saluran</th><th>Kasir</th><th className="kanan">Total</th></tr></thead>
                 <tbody>
                   {data.transaksi.map((t) => (
-                    <tr key={t.id}>
+                    <tr key={t.id} className={t.batal ? 'baris-batal' : undefined}>
                       <td>{jam(t.pada)}</td>
                       <td>
                         {t.item.map((it, i) => (
                           <div key={i}>{it.qty}× {it.nama} {it.ukuran}{it.toppings.length > 0 && <small> + {it.toppings.map((x) => x.nama).join(', ')}</small>}</div>
                         ))}
                       </td>
-                      <td>{t.metodeBayar === 'tunai' ? 'Tunai' : 'QRIS'}</td>
+                      <td>
+                        {t.saluran === 'toko' ? (t.metodeBayar === 'tunai' ? 'Tunai' : 'QRIS') : <>{t.namaSaluran}<br /><small>{t.nomorPesanan}{t.otomatis ? ' · otomatis' : ''}</small></>}
+                        {t.batal && <><br /><span className="lencana lencana-cek">Batal</span> <small>{t.batal.alasan}</small></>}
+                      </td>
                       <td>{t.kasir}</td>
                       <td className="kanan">{formatRupiah(t.total)}</td>
                     </tr>

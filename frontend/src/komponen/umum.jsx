@@ -34,6 +34,7 @@ export function Wajib({ peran, children }) {
 const MENU = {
   crew: [
     ['/crew/kasir', 'Kasir'],
+    ['/crew/pesanan-online', 'Pesanan online'],
     ['/crew/shift', 'Shift'],
     ['/crew/barang-masuk', 'Barang masuk'],
     ['/crew/pengeluaran', 'Pengeluaran kas'],
@@ -45,6 +46,8 @@ const MENU = {
     ['/owner/laporan', 'Laporan'],
     ['/owner/bahan', 'Bahan'],
     ['/owner/menu', 'Menu & resep'],
+    ['/owner/aplikasi', 'Aplikasi online'],
+    ['/owner/pesanan-online', 'Pesanan online'],
     ['/owner/pengaturan', 'Pengaturan'],
   ],
 };

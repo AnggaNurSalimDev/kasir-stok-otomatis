@@ -7,18 +7,19 @@ import { Memuat, Pesan, PesanGalat } from '../../komponen/umum.jsx';
 import { RingkasanGalat, useKirim } from '../../komponen/form.jsx';
 import { angkaBulatDari, formatRupiah } from '../../komponen/formAngka.js';
 import { tambah, ubahQty, kunciItem, hargaSatuan, total, saranUang, keBody } from './keranjang.js';
+import { hargaDi, NAMA_SALURAN } from '../../../../logika/saluran.js';
 
 // ---------------------------------------------------------------------------
 // Panel pilih ukuran & topping
 // ---------------------------------------------------------------------------
 
-function PanelPilih({ menu, toppingById, onTambah, onTutup }) {
+function PanelPilih({ menu, toppingById, saluran, onTambah, onTutup }) {
   const [ukuran, setUkuran] = useState(menu.ukuran[0].nama);
   const [toppingIds, setToppingIds] = useState([]);
   const [qty, setQty] = useState(1);
   const pertama = useRef(null);
   const topping = menu.toppingIds.map((id) => toppingById.get(id)).filter(Boolean);
-  const harga = menu.ukuran.find((u) => u.nama === ukuran).harga + toppingIds.reduce((a, id) => a + (toppingById.get(id)?.harga ?? 0), 0);
+  const harga = hargaDi(menu.ukuran.find((u) => u.nama === ukuran), saluran) + toppingIds.reduce((a, id) => a + (toppingById.has(id) ? hargaDi(toppingById.get(id), saluran) : 0), 0);
 
   // Fokus awal sekali saja; Escape memanggil onTutup terbaru lewat ref (onTutup dibuat ulang tiap render).
   const tutupRef = useRef(onTutup);
@@ -41,7 +42,7 @@ function PanelPilih({ menu, toppingById, onTambah, onTutup }) {
             <div className="pilihan">
               {menu.ukuran.map((u, i) => (
                 <button key={u.nama} ref={i === 0 ? pertama : undefined} type="button" aria-pressed={ukuran === u.nama} className="tombol-pilihan" onClick={() => setUkuran(u.nama)}>
-                  {u.nama}<br /><small>{formatRupiah(u.harga)}</small>
+                  {u.nama}<br /><small>{formatRupiah(hargaDi(u, saluran))}</small>
                 </button>
               ))}
             </div>
@@ -56,7 +57,7 @@ function PanelPilih({ menu, toppingById, onTambah, onTutup }) {
                 const dipilih = toppingIds.includes(t.id);
                 return (
                   <button key={t.id} type="button" aria-pressed={dipilih} className="tombol-pilihan" onClick={() => setToppingIds(dipilih ? toppingIds.filter((x) => x !== t.id) : [...toppingIds, t.id])}>
-                    {t.nama}<br /><small>+{formatRupiah(t.harga)}</small>
+                    {t.nama}<br /><small>+{formatRupiah(hargaDi(t, saluran))}</small>
                   </button>
                 );
               })}
@@ -85,6 +86,28 @@ function PanelPilih({ menu, toppingById, onTambah, onTutup }) {
 // ---------------------------------------------------------------------------
 // Pembayaran
 // ---------------------------------------------------------------------------
+
+// Pesanan aplikasi yang dicatat manual: cukup nomor pesanan, uangnya dibayar lewat aplikasi (tidak masuk laci).
+function BayarAplikasi({ saluran, totalTampil, onBayar, onKembali, kirim }) {
+  const [nomor, setNomor] = useState('');
+  const nama = NAMA_SALURAN[saluran];
+  const kosong = nomor.trim() === '';
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); if (!kosong) onBayar({ saluran, metodeBayar: 'aplikasi', nomorPesanan: nomor.trim() }); }} noValidate>
+      <h2>Pesanan {nama}</h2>
+      <p className="total-besar">{formatRupiah(totalTampil)}</p>
+      <RingkasanGalat galat={kirim.galat} />
+      <label htmlFor="nomor-pesanan" className="label-tebal">Nomor pesanan di aplikasi</label>
+      <input id="nomor-pesanan" className="input-besar" autoComplete="off" value={nomor} onChange={(e) => setNomor(e.target.value)} autoFocus aria-invalid={kirim.perField.nomorPesanan ? true : undefined} />
+      {kirim.perField.nomorPesanan && <small className="teks-galat">{kirim.perField.nomorPesanan}</small>}
+      <p className="bantuan">Salin dari tablet {nama}. Nomor ini mencegah pesanan yang sama tercatat dua kali. Dibayar lewat aplikasi, jadi tidak masuk laci kas.</p>
+      <div className="aksi">
+        <button type="submit" className="tombol-utama tombol-lebar" disabled={kosong || kirim.sedang}>{kirim.sedang ? 'Menyimpan…' : 'Simpan pesanan'}</button>
+        <button type="button" className="tombol-kecil" onClick={onKembali} disabled={kirim.sedang}>Kembali</button>
+      </div>
+    </form>
+  );
+}
 
 function Bayar({ totalTampil, onBayar, onKembali, kirim }) {
   const [metode, setMetode] = useState('tunai');
@@ -132,7 +155,7 @@ function Bayar({ totalTampil, onBayar, onKembali, kirim }) {
   );
 }
 
-function Struk({ struk, onBaru }) {
+export function Struk({ struk, onBaru, teksTombol = 'Transaksi baru' }) {
   const { profil } = useProfil();
   const tombol = useRef(null);
   useEffect(() => tombol.current?.focus(), []);
@@ -150,6 +173,7 @@ function Struk({ struk, onBaru }) {
           <strong>{profil.nama}</strong>
           {profil.teks.alamat && <><br /><small>{profil.teks.alamat}</small></>}
           <br /><small>{new Date(struk.pada).toLocaleString('id-ID')} · {struk.kasir}</small>
+          {struk.saluran && struk.saluran !== 'toko' && <><br /><strong>{struk.namaSaluran} · {struk.nomorPesanan}</strong></>}
         </p>
         <table>
           <tbody>
@@ -168,6 +192,8 @@ function Struk({ struk, onBaru }) {
                 <tr><td>Tunai</td><td className="kanan">{formatRupiah(struk.uangDiterima)}</td></tr>
                 <tr><td><strong>Kembalian</strong></td><td className="kanan"><strong>{formatRupiah(struk.kembalian)}</strong></td></tr>
               </>
+            ) : struk.metodeBayar === 'aplikasi' ? (
+              <tr><td>Dibayar lewat {struk.namaSaluran}</td><td className="kanan">{formatRupiah(struk.total)}</td></tr>
             ) : (
               <tr><td>QRIS</td><td className="kanan">{formatRupiah(struk.total)}</td></tr>
             )}
@@ -175,7 +201,7 @@ function Struk({ struk, onBaru }) {
         </table>
         <p className="tengah">{profil.teks.footerStruk}<br /><small>No. {struk.id}</small></p>
       </div>
-      <button ref={tombol} type="button" className="tombol-utama tombol-lebar" onClick={onBaru}>Transaksi baru</button>
+      <button ref={tombol} type="button" className="tombol-utama tombol-lebar" onClick={onBaru}>{teksTombol}</button>
     </div>
   );
 }
@@ -189,6 +215,8 @@ export default function Kasir() {
   const shift = useData('/shift/aktif');
   const menu = useData('/menu');
   const topping = useData('/topping');
+  const saluranData = useData('/saluran');
+  const [saluran, setSaluran] = useState('toko');
   const [kategori, setKategori] = useState(null);
   const [pilih, setPilih] = useState(null); // menu yang sedang dipilih ukuran/topping-nya
   const [keranjang, setKeranjang] = useState([]);
@@ -197,10 +225,10 @@ export default function Kasir() {
   const [lihatKeranjang, setLihatKeranjang] = useState(false); // HP: keranjang dibuka sebagai panel
   const kirim = useKirim();
 
-  const memuat = shift.memuat || menu.memuat || topping.memuat;
-  const galat = shift.galat ?? menu.galat ?? topping.galat;
+  const memuat = shift.memuat || menu.memuat || topping.memuat || saluranData.memuat;
+  const galat = shift.galat ?? menu.galat ?? topping.galat ?? saluranData.galat;
   if (memuat) return <Memuat />;
-  if (galat) return <PesanGalat galat={galat} ulangi={() => { shift.muatUlang(); menu.muatUlang(); topping.muatUlang(); }} />;
+  if (galat) return <PesanGalat galat={galat} ulangi={() => { shift.muatUlang(); menu.muatUlang(); topping.muatUlang(); saluranData.muatUlang(); }} />;
   if (!shift.data) {
     return <Pesan>Belum ada shift yang dibuka. <Link to="/crew/shift">Buka shift</Link> dulu sebelum memakai kasir.</Pesan>;
   }
@@ -209,9 +237,12 @@ export default function Kasir() {
   const toppingById = new Map(topping.data.map((t) => [t.id, t]));
   const daftarKategori = [...new Set(menu.data.map((m) => m.kategori))];
   const aktif = kategori ?? daftarKategori[0];
-  const totalTampil = total(keranjang, menuById, toppingById);
+  const totalTampil = total(keranjang, menuById, toppingById, saluran);
+  // Saluran yang dicatat di kasir: di toko + aplikasi aktif yang belum tersambung otomatis.
+  const manual = saluranData.data.filter((s) => s.aktif && s.mode === 'manual');
+  const otomatis = saluranData.data.filter((s) => s.aktif && s.mode === 'otomatis');
   const jumlahItem = keranjang.reduce((a, it) => a + it.qty, 0);
-  const adaItemRusak = keranjang.some((it) => hargaSatuan(it, menuById, toppingById) === null);
+  const adaItemRusak = keranjang.some((it) => hargaSatuan(it, menuById, toppingById, saluran) === null);
 
   const klikMenu = (m) => {
     // Satu ukuran tanpa topping: langsung masuk keranjang.
@@ -236,25 +267,27 @@ export default function Kasir() {
     }
   };
 
-  const baru = () => { setStruk(null); setTahap('pesan'); kirim.reset(); };
+  const baru = () => { setStruk(null); setTahap('pesan'); setSaluran('toko'); kirim.reset(); };
 
   if (tahap === 'struk') return <section className="sempit"><Struk struk={struk} onBaru={baru} /></section>;
 
   const panelKeranjang = (
     <aside className={`keranjang ${lihatKeranjang ? 'terbuka' : ''}`} aria-label="Keranjang">
       {tahap === 'bayar' ? (
-        <Bayar totalTampil={totalTampil} kirim={kirim} onBayar={bayar} onKembali={() => { kirim.reset(); setTahap('pesan'); }} />
+        saluran === 'toko'
+          ? <Bayar totalTampil={totalTampil} kirim={kirim} onBayar={bayar} onKembali={() => { kirim.reset(); setTahap('pesan'); }} />
+          : <BayarAplikasi saluran={saluran} totalTampil={totalTampil} kirim={kirim} onBayar={bayar} onKembali={() => { kirim.reset(); setTahap('pesan'); }} />
       ) : (
         <>
           <div className="judul-aksi">
-            <h2>Pesanan</h2>
+            <h2>Pesanan{saluran !== 'toko' && ` ${NAMA_SALURAN[saluran]}`}</h2>
             {lihatKeranjang && <button type="button" className="tombol-kecil hanya-hp" onClick={() => setLihatKeranjang(false)}>Tutup</button>}
           </div>
           {keranjang.length === 0 && <p className="bantuan">Belum ada pesanan. Pilih menu.</p>}
           <ul className="daftar-keranjang">
             {keranjang.map((it) => {
               const m = menuById.get(it.menuId);
-              const h = hargaSatuan(it, menuById, toppingById);
+              const h = hargaSatuan(it, menuById, toppingById, saluran);
               const k = kunciItem(it);
               return (
                 <li key={k}>
@@ -286,6 +319,20 @@ export default function Kasir() {
   return (
     <div className="tata-kasir">
       <section className="area-menu">
+        {manual.length > 0 && (
+          <div className="pilihan pilihan-kecil" role="group" aria-label="Saluran pesanan">
+            {[{ id: 'toko', nama: NAMA_SALURAN.toko }, ...manual].map((s) => (
+              <button key={s.id} type="button" className="tombol-pilihan" aria-pressed={saluran === s.id} disabled={tahap !== 'pesan'} onClick={() => setSaluran(s.id)}>{s.nama}</button>
+            ))}
+          </div>
+        )}
+        {otomatis.length > 0 && (
+          <p className="bantuan">
+            Pesanan {otomatis.map((s) => s.nama).join(' & ')} masuk otomatis.{' '}
+            <Link to="/crew/pesanan-online">Pesanan online{shift.data.pesananMenunggu > 0 && ` (${shift.data.pesananMenunggu} menunggu)`}</Link>
+          </p>
+        )}
+        {saluran !== 'toko' && <Pesan>Harga {NAMA_SALURAN[saluran]} dipakai. Stok bahan tetap berkurang sesuai resep.</Pesan>}
         <div className="tab-kategori" role="tablist" aria-label="Kategori">
           {daftarKategori.map((k) => (
             <button key={k} type="button" role="tab" aria-selected={k === aktif} onClick={() => setKategori(k)}>{k}</button>
@@ -295,7 +342,7 @@ export default function Kasir() {
           {menu.data.filter((m) => m.kategori === aktif).map((m) => (
             <button key={m.id} type="button" className="tombol-menu" onClick={() => klikMenu(m)} disabled={tahap !== 'pesan'}>
               <strong>{m.nama}</strong>
-              <small>{m.ukuran.length > 1 ? `mulai ${formatRupiah(Math.min(...m.ukuran.map((u) => u.harga)))}` : formatRupiah(m.ukuran[0].harga)}</small>
+              <small>{m.ukuran.length > 1 ? `mulai ${formatRupiah(Math.min(...m.ukuran.map((u) => hargaDi(u, saluran))))}` : formatRupiah(hargaDi(m.ukuran[0], saluran))}</small>
             </button>
           ))}
         </div>
@@ -314,6 +361,7 @@ export default function Kasir() {
         <PanelPilih
           menu={pilih}
           toppingById={toppingById}
+          saluran={saluran}
           onTutup={() => setPilih(null)}
           onTambah={(item) => { setKeranjang(tambah(keranjang, item)); setPilih(null); }}
         />
