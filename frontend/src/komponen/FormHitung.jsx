@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { Isian, RingkasanGalat, useKirim, GalatForm } from './form.jsx';
 import { angkaDari, angkaBulatDari, formatAngka, formatRupiah } from './formAngka.js';
 
-export default function FormHitung({ bahan, labelKas, tambahan, validasiTambahan, onKirim, labelKirim }) {
+export default function FormHitung({ bahan, labelKas, tambahan, validasiTambahan, onKirim, labelKirim, judul = 'Hitung bahan kunci' }) {
   const [nilai, setNilai] = useState(() => Object.fromEntries(bahan.map((b) => [b.id, ''])));
   const [kas, setKas] = useState('');
   const [periksa, setPeriksa] = useState(null); // null = sedang mengisi; objek = ringkasan siap kirim
@@ -68,7 +68,7 @@ export default function FormHitung({ bahan, labelKas, tambahan, validasiTambahan
       <RingkasanGalat galat={kirim.galat} />
       {tambahan}
       <fieldset>
-        <legend>Hitung bahan kunci</legend>
+        <legend>{judul}</legend>
         <p className="bantuan">Timbang atau ukur isi wadah, lalu tulis angkanya. Angka di sistem sengaja tidak ditampilkan.</p>
         <div className="kisi-hitung">
           {bahan.map((b) => (

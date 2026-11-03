@@ -166,3 +166,9 @@ details.kartu summary { cursor: pointer; font-weight: 600; }
   .editor-resep select { max-width: 9rem; }
   input.angka { width: 5rem; }
 }
+
+/* ---------- barang masuk & laporan ---------- */
+.hasil-konversi { font-size: 1.15rem; font-weight: 600; color: var(--tautan); margin: 0 0 0.75rem; }
+.kisi-angka { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; }
+.kisi-angka .kartu { display: flex; flex-direction: column; gap: 0.25rem; margin: 0; }
+.kisi-angka strong { font-size: 1.3rem; }

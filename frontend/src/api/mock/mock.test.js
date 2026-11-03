@@ -309,3 +309,18 @@ describe('data demo: waktu', () => {
     await expect(buatDataDemo({ hari: 2 })).rejects.toThrow(RangeError);
   });
 });
+
+describe('daftar per shift untuk crew', () => {
+  it('barang masuk & pengeluaran shift ini; kosong jika tidak ada shift', async () => {
+    expect(await panggil('/barang-masuk/shift-ini')).toEqual([]);
+    expect(await panggil('/pengeluaran-kas/shift-ini')).toEqual({ hitungKas: true, data: [] });
+    await bukaPagi();
+    await panggil('/barang-masuk', 'POST', { bahanId: 'gula', jumlah: 1, satuan: 'karung' });
+    await panggil('/pengeluaran-kas', 'POST', { jumlah: 10000, keterangan: 'Es batu' });
+    const masuk = await panggil('/barang-masuk/shift-ini');
+    expect(masuk).toHaveLength(1);
+    expect(masuk[0]).toMatchObject({ nama: 'Gula pasir', jumlah: 1, satuan: 'karung', jumlahDasar: 25000, oleh: 'Rina' });
+    const keluar = await panggil('/pengeluaran-kas/shift-ini');
+    expect(keluar.data[0]).toMatchObject({ jumlah: 10000, keterangan: 'Es batu', oleh: 'Rina' });
+  });
+});

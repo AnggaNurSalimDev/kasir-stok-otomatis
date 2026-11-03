@@ -567,6 +567,13 @@ daftar('POST', '/barang-masuk', SEMUA, S.BarangMasukBody, (ctx) => {
 
 daftar('GET', '/barang-masuk', OWNER, null, ({ st }) => [...st.barangMasuk].reverse().map((e) => tampilBarangMasuk(st, e)));
 
+// Crew: entri shift yang sedang berjalan saja (untuk dicek dan dikoreksi). Tidak memuat angka stok.
+daftar('GET', '/barang-masuk/shift-ini', SEMUA, null, ({ st }) => {
+  const s = shiftTerbuka(st);
+  if (!s) return [];
+  return st.barangMasuk.filter((e) => e.shiftId === s.id).reverse().map((e) => tampilBarangMasuk(st, e));
+});
+
 // ---------- pengeluaran kas ----------
 daftar('POST', '/pengeluaran-kas', SEMUA, S.PengeluaranKasBody, (ctx) => {
   const shift = wajibShiftTerbuka(ctx.st);
@@ -575,6 +582,15 @@ daftar('POST', '/pengeluaran-kas', SEMUA, S.PengeluaranKasBody, (ctx) => {
   ctx.st.pengeluaranKas.push(p);
   ctx.status = 201;
   return { ...p, oleh: namaPengguna(ctx.st, p.oleh) };
+});
+
+daftar('GET', '/pengeluaran-kas/shift-ini', SEMUA, null, ({ st }) => {
+  const s = shiftTerbuka(st);
+  if (!s) return { hitungKas: st.pengaturan.hitungKas, data: [] };
+  return {
+    hitungKas: s.hitungKas,
+    data: st.pengeluaranKas.filter((p) => p.shiftId === s.id).reverse().map((p) => ({ ...p, oleh: namaPengguna(st, p.oleh) })),
+  };
 });
 
 // ---------- stok opname ----------

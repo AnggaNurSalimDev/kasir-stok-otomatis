@@ -42,6 +42,7 @@ const MENU = {
   ],
   owner: [
     ['/owner', 'Ringkasan'],
+    ['/owner/laporan', 'Laporan'],
     ['/owner/bahan', 'Bahan'],
     ['/owner/menu', 'Menu & resep'],
     ['/owner/pengaturan', 'Pengaturan'],
@@ -97,16 +98,5 @@ export function Kepala() {
         ))}
       </nav>
     </header>
-  );
-}
-
-// Penanda halaman yang belum dibuat, berisi rencana isinya.
-export function Segera({ judul, rencana }) {
-  return (
-    <section>
-      <h1>{judul}</h1>
-      <Pesan>Halaman ini belum dibuat. Rencananya:</Pesan>
-      <ul>{rencana.map((r) => <li key={r}>{r}</li>)}</ul>
-    </section>
   );
 }

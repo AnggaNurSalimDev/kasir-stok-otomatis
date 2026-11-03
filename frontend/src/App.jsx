@@ -1,10 +1,14 @@
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { useSesi } from './sesi/SesiContext.jsx';
 import { PengalihProfil } from './merek/ProfilContext.jsx';
-import { Kepala, Memuat, PesanGalat, Segera, Wajib } from './komponen/umum.jsx';
+import { Kepala, Memuat, PesanGalat, Wajib } from './komponen/umum.jsx';
 import Masuk from './halaman/Masuk.jsx';
 import Kasir from './halaman/crew/Kasir.jsx';
 import Shift from './halaman/crew/Shift.jsx';
+import BarangMasuk from './halaman/crew/BarangMasuk.jsx';
+import PengeluaranKas from './halaman/crew/PengeluaranKas.jsx';
+import Opname from './halaman/crew/Opname.jsx';
+import Laporan from './halaman/Laporan.jsx';
 import Ringkasan from './halaman/owner/Ringkasan.jsx';
 import Bahan from './halaman/owner/Bahan.jsx';
 import Menu from './halaman/owner/Menu.jsx';
@@ -38,10 +42,10 @@ export default function App() {
         <Route index element={<Navigate to="kasir" replace />} />
         <Route path="kasir" element={<Kasir />} />
         <Route path="shift" element={<Shift />} />
-        <Route path="barang-masuk" element={<Segera judul="Barang masuk" rencana={['Input dalam satuan bantu: "2 karung gula" → +50.000 gr', 'Koreksi entri yang salah, wajib alasan']} />} />
-        <Route path="pengeluaran" element={<Segera judul="Pengeluaran kas" rencana={['Uang laci yang dipakai, misalnya beli es batu']} />} />
-        <Route path="opname" element={<Segera judul="Stok opname" rencana={['Hitung semua bahan, tanpa melihat angka sistem']} />} />
-        <Route path="laporan" element={<Segera judul="Laporan hari ini" rencana={['Transaksi dan pemakaian bahan hari ini']} />} />
+        <Route path="barang-masuk" element={<BarangMasuk />} />
+        <Route path="pengeluaran" element={<PengeluaranKas />} />
+        <Route path="opname" element={<Opname />} />
+        <Route path="laporan" element={<Laporan />} />
       </Route>
 
       <Route path="/owner" element={<Tata peran="owner" />}>
@@ -50,6 +54,7 @@ export default function App() {
         <Route path="menu" element={<Menu />} />
         <Route path="pengaturan" element={<Pengaturan />} />
         <Route path="shift/:id" element={<DetailShift />} />
+        <Route path="laporan" element={<Laporan />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
