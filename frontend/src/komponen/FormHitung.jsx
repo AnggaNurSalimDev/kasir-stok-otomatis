@@ -11,6 +11,9 @@ export default function FormHitung({ bahan, labelKas, tambahan, validasiTambahan
   const [nilai, setNilai] = useState(() => Object.fromEntries(bahan.map((b) => [b.id, ''])));
   const [kas, setKas] = useState('');
   const [periksa, setPeriksa] = useState(null); // null = sedang mengisi; objek = ringkasan siap kirim
+  // Setelah berhasil, form tidak bisa dikirim lagi (hitungan tidak bisa diubah, dan kiriman kedua
+  // bisa berarti membuka shift dua kali).
+  const [terkirim, setTerkirim] = useState(false);
   const kirim = useKirim();
   const pf = { ...kirim.perField };
 
@@ -38,9 +41,13 @@ export default function FormHitung({ bahan, labelKas, tambahan, validasiTambahan
   };
 
   const kirimSekarang = async () => {
+    if (terkirim || kirim.sedang) return;
     const hasil = await kirim.jalankan(() => onKirim(periksa));
     if (hasil === undefined) setPeriksa(null); // gagal: kembali ke form supaya galat bisa diperbaiki
+    else setTerkirim(true);
   };
+
+  if (terkirim) return <p className="memuat" role="status">Tersimpan.</p>;
 
   if (periksa) {
     return (

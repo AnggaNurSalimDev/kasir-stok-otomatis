@@ -40,6 +40,28 @@ const cariBahan = (st, id) => st.bahan.find((b) => b.id === id);
 const shiftTerbuka = (st) => st.shift.find((s) => s.status === 'terbuka') ?? null;
 const namaPengguna = (st, id) => (id ? st.pengguna.find((p) => p.id === id)?.nama ?? id : null);
 
+// Bahan yang wajib dihitung saat buka dan saat tutup sebuah shift, menurut pengaturan:
+//   tidak         → bahan kunci saja
+//   outlet        → semua bahan saat buka outlet (shift pertama) dan tutup outlet (shift terakhir);
+//                   pergantian shift di tengah hari tetap bahan kunci
+//   setiap_shift  → semua bahan di setiap buka dan tutup
+export const MODE_HITUNG = ['tidak', 'outlet', 'setiap_shift'];
+function daftarHitung(st, namaShift) {
+  const mode = st.pengaturan.hitungSemuaBahan ?? 'tidak';
+  const nama = st.pengaturan.shift.map((s) => s.nama);
+  const kunci = st.bahan.filter((b) => b.bahanKunci && !b.arsip).map((b) => b.id);
+  const semua = st.bahan.filter((b) => !b.arsip).map((b) => b.id);
+  const awalSemua = mode === 'setiap_shift' || (mode === 'outlet' && namaShift === nama[0]);
+  const tutupSemua = mode === 'setiap_shift' || (mode === 'outlet' && namaShift === nama.at(-1));
+  return { mode, kunci, awal: awalSemua ? semua : kunci, tutup: tutupSemua ? semua : kunci, awalSemua, tutupSemua };
+}
+
+const ringkasBahan = (st, ids) =>
+  ids.map((id) => {
+    const b = cariBahan(st, id);
+    return { id, nama: b?.nama ?? id, satuanDasar: b?.satuanDasar ?? '', bahanKunci: Boolean(b?.bahanKunci) };
+  });
+
 function wajibShiftTerbuka(st) {
   const s = shiftTerbuka(st);
   if (!s) throw konflik('Belum ada shift yang dibuka. Buka shift dulu.');
@@ -149,10 +171,10 @@ function tampilShiftRingkas(st, s) {
     dibukaOlehId: s.dibukaOleh, dibukaOleh: namaPengguna(st, s.dibukaOleh), dibukaPada: s.dibukaPada,
     ditutupOleh: namaPengguna(st, s.ditutupOleh), ditutupPada: s.ditutupPada,
     hitungKas: s.hitungKas,
-    bahanKunci: s.bahanKunci.map((id) => {
-      const b = cariBahan(st, id);
-      return { id, nama: b?.nama ?? id, satuanDasar: b?.satuanDasar ?? '' };
-    }),
+    bahanKunci: ringkasBahan(st, s.bahanKunci),
+    // Yang wajib dihitung saat tutup shift ini (bahan kunci, atau semua bahan saat tutup outlet).
+    bahanTutup: ringkasBahan(st, s.bahanTutup ?? s.bahanKunci),
+    tutupSemuaBahan: Boolean(s.tutupSemua),
   };
 }
 
@@ -206,8 +228,10 @@ function finalisasiShift(st, ctx, shift, akhirX10, kasAkhir, sumberAkhir) {
   const masuk = {};
   for (const e of st.barangMasuk.filter((e) => e.shiftId === shift.id)) masuk[e.bahanId] = (masuk[e.bahanId] ?? 0) + e.jumlahX10;
 
-  // Bahan kunci yang dihitung di kedua sisi (bisa berkurang jika owner mengubah bahan kunci di tengah jalan).
-  const dihitung = shift.bahanKunci.filter((id) => id in akhirX10);
+  // Selisih hanya bisa dihitung untuk bahan yang dihitung saat buka DAN saat tutup shift ini.
+  // Urut sesuai daftar bahan supaya tabel owner rapi.
+  const urutan = [...st.bahan.map((b) => b.id), ...Object.keys(shift.hitungAwal)];
+  const dihitung = [...new Set(urutan)].filter((id) => id in shift.hitungAwal && id in akhirX10);
   const toleransi = Object.fromEntries(
     dihitung.map((id) => {
       const b = cariBahan(st, id);
@@ -406,28 +430,43 @@ daftar('GET', '/shift/aktif', SEMUA, null, ({ st }) => {
 });
 
 // Daftar yang perlu dihitung saat buka shift (crew butuh ini sebelum shift ada).
-daftar('GET', '/shift/persiapan', SEMUA, null, ({ st }) => ({
-  namaShift: st.pengaturan.shift.map((s) => s.nama),
-  hitungKas: st.pengaturan.hitungKas,
-  bahanKunci: st.bahan.filter((b) => b.bahanKunci && !b.arsip).map((b) => ({ id: b.id, nama: b.nama, satuanDasar: b.satuanDasar })),
-  shiftTerbuka: shiftTerbuka(st) ? tampilShiftRingkas(st, shiftTerbuka(st)) : null,
-}));
+daftar('GET', '/shift/persiapan', SEMUA, null, ({ st }) => {
+  const namaShift = st.pengaturan.shift.map((s) => s.nama);
+  return {
+    namaShift,
+    hitungKas: st.pengaturan.hitungKas,
+    hitungSemuaBahan: st.pengaturan.hitungSemuaBahan ?? 'tidak',
+    bahanKunci: ringkasBahan(st, daftarHitung(st, namaShift[0]).kunci),
+    // Daftar hitung saat buka, per nama shift (buka outlet bisa berarti semua bahan).
+    bahanBuka: Object.fromEntries(namaShift.map((n) => {
+      const d = daftarHitung(st, n);
+      return [n, { semua: d.awalSemua, bahan: ringkasBahan(st, d.awal) }];
+    })),
+    shiftTerbuka: shiftTerbuka(st) ? tampilShiftRingkas(st, shiftTerbuka(st)) : null,
+  };
+});
 
 daftar('POST', '/shift/buka', SEMUA, S.BukaShiftBody, (ctx) => {
   const { st, body } = ctx;
   if (!st.pengaturan.shift.some((s) => s.nama === body.namaShift)) {
     throw validasi('Shift tidak valid', [{ field: 'namaShift', pesan: `Shift "${body.namaShift}" tidak ada di pengaturan` }]);
   }
-  const bahanKunci = st.bahan.filter((b) => b.bahanKunci && !b.arsip).map((b) => b.id);
-  if (bahanKunci.length === 0) throw konflik('Owner belum memilih bahan kunci. Shift belum bisa dibuka.');
+  const daftarH = daftarHitung(st, body.namaShift);
+  const bahanKunci = daftarH.kunci;
+  if (bahanKunci.length === 0 && daftarH.mode !== 'setiap_shift') throw konflik('Owner belum memilih bahan kunci. Shift belum bisa dibuka.');
   const hitungKasAktif = st.pengaturan.hitungKas;
   if (hitungKasAktif && body.kasAwal === undefined) throw validasi('Kas belum dihitung', [{ field: 'kasAwal', pesan: 'Wajib diisi' }]);
   if (!hitungKasAktif && body.kasAwal !== undefined) throw validasi('Hitung kas tidak aktif', [{ field: 'kasAwal', pesan: 'Tidak dipakai' }]);
 
-  const awalX10 = hitunganKeX10(body.hitungan, bahanKunci, st);
+  const awalX10 = hitunganKeX10(body.hitungan, daftarH.awal, st);
 
   // Shift sebelumnya lupa ditutup → hitungan ini dipakai sebagai hitungan akhirnya.
   const lupa = shiftTerbuka(st);
+  // Kiriman ganda (tombol ditekan dua kali / jaringan lambat): shift yang baru saja dibuka orang yang sama
+  // jangan sampai ditandai "tidak ditutup" oleh kiriman keduanya.
+  if (lupa && lupa.dibukaOleh === ctx.pengguna.id && new Date(ctx.pada) - new Date(lupa.dibukaPada) < BATAS_BUKA_GANDA_MS) {
+    throw konflik(`Kamu baru saja membuka shift ${lupa.nama}. Jika ingin menggantinya, tutup shift itu dulu.`);
+  }
   if (lupa) finalisasiShift(st, ctx, lupa, awalX10, hitungKasAktif ? body.kasAwal : null, 'buka_berikutnya');
 
   // Serah terima dibandingkan dengan shift terakhir sebelum ini.
@@ -448,7 +487,10 @@ daftar('POST', '/shift/buka', SEMUA, S.BukaShiftBody, (ctx) => {
     dibukaPada: ctx.pada,
     ditutupOleh: null,
     ditutupPada: null,
-    bahanKunci, // salinan: perubahan bahan kunci di tengah shift tidak berlaku untuk shift ini
+    bahanKunci, // salinan: perubahan bahan kunci/pengaturan di tengah shift tidak berlaku untuk shift ini
+    bahanTutup: daftarH.tutup,
+    awalSemua: daftarH.awalSemua,
+    tutupSemua: daftarH.tutupSemua,
     hitungKas: hitungKasAktif,
     hitungAwal: awalX10,
     kasAwal: hitungKasAktif ? body.kasAwal : null,
@@ -468,7 +510,7 @@ daftar('POST', '/shift/tutup', SEMUA, S.TutupShiftBody, (ctx) => {
   const shift = wajibShiftTerbuka(st);
   if (shift.hitungKas && body.kasAkhir === undefined) throw validasi('Kas belum dihitung', [{ field: 'kasAkhir', pesan: 'Wajib diisi' }]);
   if (!shift.hitungKas && body.kasAkhir !== undefined) throw validasi('Hitung kas tidak aktif', [{ field: 'kasAkhir', pesan: 'Tidak dipakai' }]);
-  const akhirX10 = hitunganKeX10(body.hitungan, shift.bahanKunci, st);
+  const akhirX10 = hitunganKeX10(body.hitungan, shift.bahanTutup ?? shift.bahanKunci, st);
   finalisasiShift(st, ctx, shift, akhirX10, shift.hitungKas ? body.kasAkhir : null, 'tutup');
   terapkanPenyesuaian(st, ctx, 'tutup', shift.id, akhirX10);
   // Crew hanya mendapat konfirmasi; hasil selisih untuk owner.
@@ -659,7 +701,8 @@ function periksaRespons(data, peran) {
   jalan(data, 'data');
 }
 
-const VERSI_DATA = 2;
+const VERSI_DATA = 3;
+const BATAS_BUKA_GANDA_MS = 10 * 60 * 1000;
 
 // salin = false: state diubah langsung tanpa disalin (tidak atomik). Hanya untuk pembuat data demo.
 export function buatMockApi({ penyimpanan, buatDataAwal, jedaMs = [300, 800], acak = Math.random, sekarang = () => new Date(), salin = true }) {

@@ -9,9 +9,10 @@ const jam = (iso) => new Date(iso).toLocaleString('id-ID', { weekday: 'long', ho
 
 function BukaShift({ persiapan, lupaDitutup, onSelesai }) {
   const { api } = useSesi();
-  const [namaShift, setNamaShift] = useState('');
+  const [namaShift, setNamaShift] = useState(persiapan.namaShift.length === 1 ? persiapan.namaShift[0] : '');
+  const daftar = namaShift ? persiapan.bahanBuka[namaShift] : null;
 
-  if (persiapan.bahanKunci.length === 0) {
+  if (persiapan.bahanKunci.length === 0 && persiapan.hitungSemuaBahan !== 'setiap_shift') {
     return <Pesan jenis="galat">Owner belum memilih bahan kunci, jadi shift belum bisa dibuka. Hubungi owner.</Pesan>;
   }
 
@@ -24,30 +25,34 @@ function BukaShift({ persiapan, lupaDitutup, onSelesai }) {
           dan shift itu ditandai &ldquo;tidak ditutup&rdquo; untuk owner.
         </Pesan>
       )}
-      <FormHitung
-        bahan={persiapan.bahanKunci}
-        labelKas={persiapan.hitungKas ? 'Kas awal' : null}
-        labelKirim="Buka shift"
-        validasiTambahan={() => (namaShift ? [] : [{ field: 'namaShift', pesan: 'Pilih shift' }])}
-        tambahan={
-          <fieldset>
-            <legend>Shift</legend>
-            <div className="daftar-centang">
-              {persiapan.namaShift.map((n) => (
-                <label key={n} className="centang">
-                  <input type="radio" name="namaShift" value={n} checked={namaShift === n} onChange={() => setNamaShift(n)} /> {n}
-                </label>
-              ))}
-            </div>
-          </fieldset>
-        }
-        onKirim={async ({ hitungan, kas }) => {
-          const body = { namaShift, hitungan, ...(persiapan.hitungKas && { kasAwal: kas }) };
-          const shift = await api('/shift/buka', { method: 'POST', body });
-          onSelesai(`Shift ${shift.nama} dibuka. Kasir siap dipakai.`);
-          return shift;
-        }}
-      />
+      <fieldset>
+        <legend>Shift</legend>
+        <div className="daftar-centang">
+          {persiapan.namaShift.map((n) => (
+            <label key={n} className="centang">
+              <input type="radio" name="namaShift" value={n} checked={namaShift === n} onChange={() => setNamaShift(n)} /> {n}
+              {persiapan.bahanBuka[n].semua && <small> (buka outlet: hitung semua bahan)</small>}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      {!daftar ? (
+        <p className="bantuan">Pilih shift dulu. Bahan yang dihitung bisa berbeda per shift.</p>
+      ) : (
+        <FormHitung
+          key={namaShift}
+          bahan={daftar.bahan}
+          judul={daftar.semua ? `Hitung semua bahan (${daftar.bahan.length})` : `Hitung bahan kunci (${daftar.bahan.length})`}
+          labelKas={persiapan.hitungKas ? 'Kas awal' : null}
+          labelKirim="Buka shift"
+          onKirim={async ({ hitungan, kas }) => {
+            const body = { namaShift, hitungan, ...(persiapan.hitungKas && { kasAwal: kas }) };
+            const shift = await api('/shift/buka', { method: 'POST', body });
+            onSelesai(`Shift ${shift.nama} dibuka. Kasir siap dipakai.`, { dibuka: shift.id });
+            return shift;
+          }}
+        />
+      )}
     </>
   );
 }
@@ -89,14 +94,19 @@ function TutupShift({ shift, onSelesai, onBukaBaru }) {
         Dibuka {jam(shift.dibukaPada)} oleh {shift.dibukaOleh}. <Link to="/crew/kasir">Ke kasir</Link>
       </Pesan>
       <h2>Tutup shift</h2>
-      <p className="bantuan">Lakukan di akhir shift. Hitung bahan yang sama seperti saat buka shift.</p>
+      <p className="bantuan">
+        {shift.tutupSemuaBahan
+          ? 'Lakukan di akhir shift. Ini tutup outlet, jadi semua bahan dihitung.'
+          : 'Lakukan di akhir shift. Hitung bahan kunci saja.'}
+      </p>
       <FormHitung
-        bahan={shift.bahanKunci}
+        bahan={shift.bahanTutup}
+        judul={shift.tutupSemuaBahan ? `Hitung semua bahan (${shift.bahanTutup.length})` : `Hitung bahan kunci (${shift.bahanTutup.length})`}
         labelKas={shift.hitungKas ? 'Kas akhir' : null}
         labelKirim="Tutup shift"
         onKirim={async ({ hitungan, kas }) => {
           const hasil = await api('/shift/tutup', { method: 'POST', body: { hitungan, ...(shift.hitungKas && { kasAkhir: kas }) } });
-          onSelesai(`Shift ${shift.nama} ditutup. Terima kasih! Crew berikutnya bisa membuka shift baru.`, shift.id);
+          onSelesai(`Shift ${shift.nama} ditutup. Terima kasih! Crew berikutnya bisa membuka shift baru.`, { ditutup: shift.id });
           return hasil;
         }}
       />
@@ -118,18 +128,23 @@ export default function Shift() {
   // Shift yang baru saja ditutup di layar ini. Selama data belum dimuat ulang, shift ini
   // jangan ditampilkan sebagai "sedang berjalan".
   const [baruDitutup, setBaruDitutup] = useState(null);
+  // Shift yang baru saja dibuka di layar ini. Selama data belum memuatnya, form buka disembunyikan
+  // supaya tidak terkirim dua kali.
+  const [baruDibuka, setBaruDibuka] = useState(null);
 
-  const selesai = (teks, idDitutup = null) => {
+  const selesai = (teks, { ditutup = null, dibuka = null } = {}) => {
     setPesan(teks);
     setPaksaBuka(false);
     setPilihan(null);
-    setBaruDitutup(idDitutup);
+    setBaruDitutup(ditutup);
+    setBaruDibuka(dibuka);
     muatUlang();
   };
 
   if (memuat) return <Memuat />;
   if (galat) return <PesanGalat galat={galat} ulangi={muatUlang} />;
 
+  if (baruDibuka && data.shiftTerbuka?.id !== baruDibuka) return <section className="sempit">{pesan && <Pesan jenis="sukses">{pesan}</Pesan>}<Memuat teks="Memuat shift…" /></section>;
   const terbuka = data.shiftTerbuka?.id === baruDitutup ? null : data.shiftTerbuka;
   const milikOrangLain = Boolean(terbuka && pengguna && terbuka.dibukaOlehId !== pengguna.id);
   return (

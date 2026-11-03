@@ -34,12 +34,19 @@ export function penyimpananObjek() {
   };
 }
 
-export const AWALAN_KUNCI = 'kasir-demo-v2:';
+export const AWALAN_KUNCI = 'kasir-demo-v3:';
+const AWALAN_LAMA = /^kasir-demo-v\d+:/;
 
 // localStorage bisa melempar (mode privat, kuota penuh). Galat baca dianggap "belum ada data".
 // Kuota penuh saat menulis: data demo profil lain dihapus dulu, lalu dicoba sekali lagi.
 export function penyimpananLokal(kunci = `${AWALAN_KUNCI}teh`) {
   const ls = () => window.localStorage;
+  // Data demo versi lama tidak dipakai lagi; hapus supaya tidak menghabiskan kuota.
+  try {
+    Object.keys(ls()).filter((k) => AWALAN_LAMA.test(k) && !k.startsWith(AWALAN_KUNCI)).forEach((k) => ls().removeItem(k));
+  } catch {
+    /* mode privat */
+  }
   return {
     baca: () => {
       try {

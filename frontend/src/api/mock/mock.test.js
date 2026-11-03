@@ -24,10 +24,17 @@ const SEMUA_KUNCI = { creamer: 1000, airThaiTea: 4000, airGreenTea: 3000, bubukC
 const bukaPagi = (hitungan = SEMUA_KUNCI, oleh = 'rina') => panggil('/shift/buka', 'POST', { namaShift: 'Pagi', hitungan, kasAwal: 200000 }, oleh);
 const thaiTea2 = { item: [{ menuId: 'thaiTea', ukuran: 'Regular', toppingIds: ['tpArenJelly'], qty: 2 }], metodeBayar: 'qris' };
 
+// Test unit memakai mode "hanya bahan kunci" supaya hitungan tetap kecil; mode lain diuji tersendiri.
+const katalogUji = (mode = 'tidak') => {
+  const k = buatKatalog();
+  k.pengaturan.hitungSemuaBahan = mode;
+  return k;
+};
+
 beforeEach(() => {
   memori = penyimpananMemori();
   jam = new Date('2026-11-03T01:00:00Z'); // 08.00 WIB
-  api = buatMockApi({ penyimpanan: memori, buatDataAwal: buatKatalog, jedaMs: [0, 0], sekarang: () => jam });
+  api = buatMockApi({ penyimpanan: memori, buatDataAwal: () => katalogUji(), jedaMs: [0, 0], sekarang: () => jam });
 });
 
 describe('akses', () => {
@@ -329,5 +336,85 @@ describe('shift aktif menyebut siapa yang membuka', () => {
   it('dibukaOlehId dan nama', async () => {
     await bukaPagi(SEMUA_KUNCI, 'dimas');
     expect(await panggil('/shift/aktif', 'GET', undefined, 'sari')).toMatchObject({ dibukaOlehId: 'dimas', dibukaOleh: 'Dimas' });
+  });
+});
+
+describe('hitung semua bahan (pengaturan hitungSemuaBahan)', () => {
+  const SEMUA = Object.fromEntries(buatKatalog().bahan.map((b) => [b.id, 100]));
+  const pakaiMode = (mode) => {
+    api = buatMockApi({ penyimpanan: penyimpananMemori(), buatDataAwal: () => katalogUji(mode), jedaMs: [0, 0], sekarang: () => jam });
+  };
+  const buka = (nama, hitungan, oleh = 'rina') => panggil('/shift/buka', 'POST', { namaShift: nama, hitungan, kasAwal: 200000 }, oleh);
+  const tutup = (hitungan, oleh = 'rina') => panggil('/shift/tutup', 'POST', { hitungan, kasAkhir: 200000 }, oleh);
+  const kunciSaja = (n = 100) => Object.fromEntries(Object.keys(SEMUA_KUNCI).map((id) => [id, n]));
+
+  it('outlet: buka Pagi = semua bahan, tutup Pagi = bahan kunci, buka Sore = kunci, tutup Sore = semua', async () => {
+    pakaiMode('outlet');
+    const p = await panggil('/shift/persiapan');
+    expect(p.bahanBuka.Pagi.semua).toBe(true);
+    expect(p.bahanBuka.Pagi.bahan).toHaveLength(Object.keys(SEMUA).length);
+    expect(p.bahanBuka.Sore.semua).toBe(false);
+    // hanya bahan kunci saat buka outlet → ditolak
+    expect((await galat(buka('Pagi', kunciSaja()))).perField).toHaveProperty('hitungan.gula');
+    await buka('Pagi', SEMUA);
+    expect((await panggil('/shift/aktif')).tutupSemuaBahan).toBe(false);
+    await tutup(kunciSaja());
+    await buka('Sore', kunciSaja(), 'dimas');
+    expect((await panggil('/shift/aktif', 'GET', undefined, 'dimas')).bahanTutup).toHaveLength(Object.keys(SEMUA).length);
+    await tutup(SEMUA, 'dimas');
+  });
+
+  it('outlet: serah terima malam membandingkan semua bahan; selisih shift hanya bahan yang dihitung di awal dan akhir', async () => {
+    pakaiMode('outlet');
+    await buka('Pagi', SEMUA);
+    await tutup(kunciSaja());
+    await buka('Sore', kunciSaja(), 'dimas');
+    await tutup({ ...SEMUA, gula: 90 }, 'dimas');
+    jam = new Date('2026-11-04T00:00:00Z');
+    await buka('Pagi', { ...SEMUA, gula: 80 }, 'sari'); // 10 gr gula hilang semalam
+    const [pagiBesok, sore] = await panggil('/shift', 'GET', undefined, 'owner');
+    const dSore = await panggil(`/shift/${sore.id}`, 'GET', undefined, 'owner');
+    expect(dSore.hasil.bahan.map((b) => b.bahanId).sort()).toEqual(Object.keys(SEMUA_KUNCI).sort()); // gula bukan bahan kunci
+    const dPagi = await panggil(`/shift/${pagiBesok.id}`, 'GET', undefined, 'owner');
+    expect(dPagi.serahTerima.bahan).toHaveLength(Object.keys(SEMUA).length);
+    expect(dPagi.serahTerima.bahan.find((b) => b.bahanId === 'gula').selisih).toBe(-10);
+  });
+
+  it('setiap_shift: semua bahan di setiap buka dan tutup, selisih untuk semua bahan', async () => {
+    pakaiMode('setiap_shift');
+    const p = await panggil('/shift/persiapan');
+    expect(p.bahanBuka.Sore.semua).toBe(true);
+    await buka('Pagi', SEMUA);
+    await tutup({ ...SEMUA, gula: 95 });
+    const [s] = await panggil('/shift', 'GET', undefined, 'owner');
+    const d = await panggil(`/shift/${s.id}`, 'GET', undefined, 'owner');
+    expect(d.hasil.bahan).toHaveLength(Object.keys(SEMUA).length);
+    expect(d.hasil.bahan.find((b) => b.bahanId === 'gula')).toMatchObject({ selisih: -5, status: 'perlu_dicek' });
+  });
+
+  it('pengaturan wajib menyebut mode; mode asing ditolak', async () => {
+    const body = { shift: [{ nama: 'Pagi' }], hitungKas: true, toleransiKasRupiah: 0 };
+    expect((await galat(panggil('/pengaturan', 'PUT', body, 'owner'))).status).toBe(400);
+    expect((await galat(panggil('/pengaturan', 'PUT', { ...body, hitungSemuaBahan: 'kadang' }, 'owner'))).status).toBe(400);
+    expect((await panggil('/pengaturan', 'PUT', { ...body, hitungSemuaBahan: 'setiap_shift' }, 'owner')).hitungSemuaBahan).toBe('setiap_shift');
+  });
+});
+
+describe('buka shift ganda', () => {
+  it('orang yang sama membuka lagi dalam 10 menit → 409, shift pertama tetap terbuka', async () => {
+    await bukaPagi();
+    jam = new Date(jam.getTime() + 60 * 1000);
+    expect((await galat(bukaPagi())).status).toBe(409);
+    const [s] = await panggil('/shift', 'GET', undefined, 'owner');
+    expect(s.status).toBe('terbuka');
+  });
+  it('orang lain, atau orang yang sama setelah lama (lupa tutup), tetap boleh', async () => {
+    await bukaPagi();
+    jam = new Date(jam.getTime() + 60 * 1000);
+    await panggil('/shift/buka', 'POST', { namaShift: 'Sore', hitungan: SEMUA_KUNCI, kasAwal: 200000 }, 'dimas');
+    jam = new Date(jam.getTime() + 12 * 3600 * 1000);
+    await panggil('/shift/buka', 'POST', { namaShift: 'Pagi', hitungan: SEMUA_KUNCI, kasAwal: 200000 }, 'dimas');
+    const [baru, lama] = await panggil('/shift', 'GET', undefined, 'owner');
+    expect([baru.status, lama.status]).toEqual(['terbuka', 'tidak_ditutup']);
   });
 });

@@ -11,6 +11,7 @@ function FormPengaturan({ awal, onSelesai }) {
     shift: awal.shift.map((s) => s.nama),
     hitungKas: awal.hitungKas,
     toleransiKasRupiah: String(awal.toleransiKasRupiah),
+    hitungSemuaBahan: awal.hitungSemuaBahan ?? 'tidak',
   });
   const kirim = useKirim();
   const pf = kirim.perField;
@@ -21,7 +22,7 @@ function FormPengaturan({ awal, onSelesai }) {
       const toleransi = angkaBulatDari(f.toleransiKasRupiah);
       if (toleransi === null) throw new GalatForm([{ field: 'toleransiKasRupiah', pesan: 'Wajib rupiah bulat' }]);
       // Hanya field yang boleh diubah; zonaWaktu tidak dikirim (body strict).
-      return api('/pengaturan', { method: 'PUT', body: { shift: f.shift.map((nama) => ({ nama })), hitungKas: f.hitungKas, toleransiKasRupiah: toleransi } });
+      return api('/pengaturan', { method: 'PUT', body: { shift: f.shift.map((nama) => ({ nama })), hitungKas: f.hitungKas, toleransiKasRupiah: toleransi, hitungSemuaBahan: f.hitungSemuaBahan } });
     }, 'Pengaturan disimpan. Berlaku mulai shift yang dibuka berikutnya.');
     if (hasil) onSelesai();
   };
@@ -45,7 +46,21 @@ function FormPengaturan({ awal, onSelesai }) {
         ))}
         {pf.shift && <small className="teks-galat">{pf.shift}</small>}
         {f.shift.length < 4 && <button type="button" className="tombol-kecil" onClick={() => setF({ ...f, shift: [...f.shift, ''] })}>+ Tambah shift</button>}
-        <p className="bantuan">Setiap pergantian shift, crew menghitung bahan kunci. Bahan kunci dipilih di halaman Bahan.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Hitung stok saat buka dan tutup shift</legend>
+        {[
+          ['tidak', 'Bahan kunci saja', 'Paling cepat. Bahan lain dihitung lewat stok opname.'],
+          ['outlet', 'Semua bahan saat buka dan tutup outlet', `Shift pertama (${f.shift[0] || '…'}) dibuka dan shift terakhir (${f.shift.at(-1) || '…'}) ditutup dengan menghitung semua bahan. Pergantian shift di tengah hari tetap bahan kunci. Kehilangan di malam hari terlihat untuk semua bahan.`],
+          ['setiap_shift', 'Semua bahan setiap pergantian shift', 'Paling teliti: selisih setiap bahan bisa ditunjuk ke satu shift. Cocok untuk outlet dengan sedikit bahan.'],
+        ].map(([nilai, judul, bantuan]) => (
+          <label key={nilai} className="centang">
+            <input type="radio" name="hitungSemuaBahan" value={nilai} checked={f.hitungSemuaBahan === nilai} onChange={() => setF({ ...f, hitungSemuaBahan: nilai })} />
+            <span>{judul}<br /><small>{bantuan}</small></span>
+          </label>
+        ))}
+        <p className="bantuan">Bahan kunci dipilih di halaman Bahan. Selisih per shift dihitung untuk bahan yang dihitung saat buka dan saat tutup shift itu.</p>
       </fieldset>
 
       <fieldset>

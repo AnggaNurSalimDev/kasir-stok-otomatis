@@ -63,6 +63,8 @@ export const PengaturanBody = z
     shift: z.array(z.object({ nama: teks(20) }).strict()).min(1, 'Minimal 1 shift').max(4, 'Maksimal 4 shift'),
     hitungKas: z.boolean(),
     toleransiKasRupiah: rupiah,
+    // tidak: hanya bahan kunci · outlet: semua bahan saat buka & tutup outlet · setiap_shift: semua bahan setiap pergantian
+    hitungSemuaBahan: z.enum(['tidak', 'outlet', 'setiap_shift']),
   })
   .strict()
   .superRefine((p, ctx) => {

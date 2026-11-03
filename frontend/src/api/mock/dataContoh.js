@@ -23,14 +23,14 @@ export function buatKatalog(usaha = 'teh') {
   const k = KATALOG[usaha];
   if (!k) throw new TypeError(`Jenis usaha tidak dikenal: ${usaha}`);
   return {
-    versi: 2,
+    versi: 3,
     usaha,
     urut: 0,
     pengguna: structuredClone(k.pengguna),
     bahan: structuredClone(k.bahan),
     menu: structuredClone(k.menu),
     topping: structuredClone(k.topping),
-    pengaturan: { shift: [{ nama: 'Pagi' }, { nama: 'Sore' }], hitungKas: true, toleransiKasRupiah: 0, zonaWaktu: 'Asia/Jakarta' },
+    pengaturan: { shift: [{ nama: 'Pagi' }, { nama: 'Sore' }], hitungKas: true, toleransiKasRupiah: 0, hitungSemuaBahan: 'outlet', zonaWaktu: 'Asia/Jakarta' },
     stok: Object.fromEntries(k.bahan.map((b) => [b.id, 0])),
     shift: [],
     transaksi: [],
@@ -125,12 +125,14 @@ export async function buatDataDemo({ sekarang = new Date(), hari = 30, benih = 2
     const khusus = KHUSUS[i] ?? {};
     const hariIniTerbuka = i === jumlahShift - 1;
     const oleh = pagi ? crew[d % crew.length] : crew[(d + 1) % crew.length];
-    const kunci = st().bahan.filter((b) => b.bahanKunci && !b.arsip).map((b) => b.id);
 
     // Buka shift. Shift hari ini tidak boleh dibuka di masa depan (demo bisa dibuka jam berapa pun).
     jam = jamJakarta(mulai, d, pagi ? 7 : 15, antara(0, 10));
     if (hariIniTerbuka && jam.getTime() > sekarang.getTime() - 60 * 60000) jam = new Date(sekarang.getTime() - 60 * 60000);
-    await panggil('/shift/buka', 'POST', { namaShift: pagi ? 'Pagi' : 'Sore', hitungan: hitung(kunci), kasAwal: kasLaci }, oleh);
+    const namaShift = pagi ? 'Pagi' : 'Sore';
+    // Bahan yang dihitung mengikuti pengaturan (buka outlet = semua bahan), sama seperti di layar crew.
+    const persiapan = await panggil('/shift/persiapan', 'GET', undefined, oleh);
+    await panggil('/shift/buka', 'POST', { namaShift, hitungan: hitung(persiapan.bahanBuka[namaShift].bahan.map((b) => b.id)), kasAwal: kasLaci }, oleh);
 
     // Stok opname mingguan (Pagi hari ke-7, 14, …): semua bahan, termasuk yang bukan bahan kunci.
     if (pagi && d > 0 && d % 7 === 0 && !hariIniTerbuka) {
@@ -221,7 +223,8 @@ export async function buatDataDemo({ sekarang = new Date(), hari = 30, benih = 2
 
     if (!khusus.tidakDitutup) {
       maju(15);
-      await panggil('/shift/tutup', 'POST', { hitungan: hitung(kunci), kasAkhir: kasLaci }, oleh);
+      const aktif = await panggil('/shift/aktif', 'GET', undefined, oleh);
+      await panggil('/shift/tutup', 'POST', { hitungan: hitung(aktif.bahanTutup.map((b) => b.id)), kasAkhir: kasLaci }, oleh);
     }
     if (khusus.hilangMalam) {
       const { bahanId, jumlah } = kj.hilangMalam;
