@@ -22,8 +22,9 @@ const CARA = {
     'Uji di lingkungan staging, lalu aktifkan untuk outlet.',
   ],
   shopeefood: [
-    'Belum ada jalur pendaftaran terbuka yang kami temukan.',
-    'Jalur yang ada: lewat penyedia agregator yang sudah bermitra (berbayar), atau tetap dicatat manual di kasir.',
+    'ShopeeFood hanya tersambung ke aplikasi kasir dari penyedia yang sudah bekerja sama dengan ShopeeFood; tidak ada pendaftaran mandiri untuk developer.',
+    'Merchant menghubungi tim Sales ShopeeFood untuk pendaftaran. Menurut Pusat Bantuan Shopee, integrasi API-nya tidak dikenakan biaya tambahan dari ShopeeFood.',
+    'Sebelum kasir ini menjadi mitra ShopeeFood: dicatat manual, atau lewat agregator yang sudah bermitra (berbayar).',
   ],
 };
 

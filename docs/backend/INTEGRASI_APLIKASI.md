@@ -111,7 +111,7 @@ Endpoint mock `/integrasi/:saluran/pesanan` dan `/integrasi/:saluran/batal` **ti
 | GoFood | **Akun owner klien** (Integrasi Langsung), developer mengerjakan | developer.gobiz.com dengan email owner GoBiz → buat integrasi → App ID & Secret → outlet sandbox → uji → ajukan verifikasi lewat formulir | biaya, lama verifikasi |
 | GoFood (banyak klien) | Developer sebagai mitra (Model Fasilitator) | formulir mitra GoBiz → penilaian usaha → kredensial → setiap outlet login & izinkan → tautkan outlet | syarat badan usaha, biaya |
 | GrabFood | Developer (Partner Development Account) | daftar di developer.grab.com → layanan POS **disetujui tertulis** oleh Grab → outlet verifikasi sebagai merchant | syarat dokumen, lama persetujuan |
-| ShopeeFood | — | tidak ditemukan jalur terbuka; lewat agregator berbayar atau tetap manual | — |
+| ShopeeFood | Penyedia kasir yang **sudah bekerja sama** dengan ShopeeFood; merchant mendaftar lewat tim Sales ShopeeFood | tidak ada pendaftaran mandiri developer; menurut Pusat Bantuan Shopee integrasi API tidak dikenakan biaya tambahan dari ShopeeFood | cara menjadi penyedia kasir mitra, syaratnya |
 
 Catatan dari ketentuan Grab: penyedia POS tidak boleh menarik biaya tambahan khusus untuk layanan POS Grab itu sendiri. Jual jasa pembuatan / sistem kasir secara keseluruhan, bukan "fitur Grab + Rp X".
 
