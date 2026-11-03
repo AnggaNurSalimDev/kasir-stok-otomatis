@@ -90,3 +90,14 @@ tr.redup { color: var(--redup); }
   .editor-resep select { max-width: 9rem; }
   input.angka { width: 5rem; }
 }
+
+/* ---------- shift ---------- */
+.sempit { max-width: 720px; }
+.kisi-hitung { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0 1rem; }
+.kisi-hitung input.angka { width: 100%; }
+td.kanan, .kanan { text-align: right; }
+details.kartu summary { cursor: pointer; font-weight: 600; }
+.lencana { display: inline-block; padding: 0.05rem 0.5rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
+.lencana-ok { background: #ecfdf3; color: var(--sukses); }
+.lencana-cek { background: #fef3f2; color: var(--galat); }
+.tabel-kecil { width: auto; min-width: 320px; }

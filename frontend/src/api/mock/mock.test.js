@@ -270,3 +270,16 @@ describe('data demo: waktu', () => {
     }
   });
 });
+
+describe('data demo: kas', () => {
+  it('kas awal setiap shift Pagi kembali ke modal laci (uang disetor tiap malam)', async () => {
+    const st = await buatDataDemo({ sekarang: new Date('2026-11-03T02:00:00Z') });
+    // Kecuali setelah shift Sore yang lupa ditutup: malam itu tidak ada setoran.
+    const pagi = st.shift.filter((s, i) => s.nama === 'Pagi' && i > 0 && st.shift[i - 1].status === 'ditutup');
+    expect(pagi.length).toBeGreaterThan(3);
+    expect(pagi.every((s) => s.kasAwal <= 200000)).toBe(true);
+    const setelahLupa = st.shift.find((s, i) => i > 0 && st.shift[i - 1].status === 'tidak_ditutup');
+    expect(setelahLupa.kasAwal).toBeGreaterThan(200000);
+    expect(st.pengeluaranKas.some((p) => p.keterangan === 'Setor ke owner')).toBe(true);
+  });
+});

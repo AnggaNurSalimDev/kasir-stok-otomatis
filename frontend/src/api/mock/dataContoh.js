@@ -185,7 +185,8 @@ export function buatDataDemo({ sekarang = new Date(), hari = 6, benih = 2026 } =
     bubukCoklat: 15000, bubukMatcha: 5000, bijiKopi: 20000, sirupAren: 7500, arenJelly: 20000, boba: 20000,
     oreo: 480, cup: 2000,
   };
-  let kasLaci = 200000;
+  const MODAL_LACI = 200000;
+  let kasLaci = MODAL_LACI;
   const hitung = (ids) => Object.fromEntries(ids.map((id) => [id, Math.round(fisik[id] / 10)])); // dihitung per 1 satuan
 
   const urutanSatuanBeli = (b) => [...b.satuanBantu].sort((x, y) => y.konversi - x.konversi)[0];
@@ -271,6 +272,14 @@ export function buatDataDemo({ sekarang = new Date(), hari = 6, benih = 2026 } =
       }
       if (khusus.kasHilang) kasLaci -= khusus.kasHilang;
       if (hariIniTerbuka) break;
+
+      // Akhir hari: uang disetor ke owner, laci disisakan modal. Dicatat sebagai pengeluaran kas
+      // supaya kas shift berikutnya tetap bisa dibandingkan (serah terima).
+      if (!pagi && !khusus.tidakDitutup && kasLaci > MODAL_LACI) {
+        jam = new Date(jam.getTime() + 10 * 60000);
+        await panggil('/pengeluaran-kas', 'POST', { jumlah: kasLaci - MODAL_LACI, keterangan: 'Setor ke owner' }, oleh);
+        kasLaci = MODAL_LACI;
+      }
 
       // Tutup shift
       if (!khusus.tidakDitutup) {
