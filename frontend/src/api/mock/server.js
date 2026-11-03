@@ -145,7 +145,8 @@ function tampilHasilBaris(st, r) {
 function tampilShiftRingkas(st, s) {
   return {
     id: s.id, nama: s.nama, status: s.status,
-    dibukaOleh: namaPengguna(st, s.dibukaOleh), dibukaPada: s.dibukaPada,
+    // id dipakai halaman Shift untuk tahu apakah yang membuka sama dengan yang sedang masuk.
+    dibukaOlehId: s.dibukaOleh, dibukaOleh: namaPengguna(st, s.dibukaOleh), dibukaPada: s.dibukaPada,
     ditutupOleh: namaPengguna(st, s.ditutupOleh), ditutupPada: s.ditutupPada,
     hitungKas: s.hitungKas,
     bahanKunci: s.bahanKunci.map((id) => {

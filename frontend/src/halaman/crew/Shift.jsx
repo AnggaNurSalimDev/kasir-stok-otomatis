@@ -52,6 +52,34 @@ function BukaShift({ persiapan, lupaDitutup, onSelesai }) {
   );
 }
 
+// Ditampilkan saat yang masuk BUKAN orang yang membuka shift: kemungkinan besar shift itu lupa ditutup.
+// Crew harus memilih dengan sadar, supaya tidak menutup shift orang lain tanpa sengaja.
+function PilihLanjutan({ shift, onPilih }) {
+  return (
+    <>
+      <h1>Shift {shift.nama} masih terbuka</h1>
+      <Pesan>
+        Shift ini dibuka oleh <strong>{shift.dibukaOleh}</strong> {jam(shift.dibukaPada)} dan belum ditutup.
+      </Pesan>
+      <div className="pilihan-besar">
+        <button type="button" className="tombol-besar" onClick={() => onPilih('baru')}>
+          <strong>{shift.dibukaOleh} lupa menutup, saya buka shift baru</strong>
+          <br />
+          <small>
+            Hitunganmu dipakai sebagai hitungan akhir shift {shift.nama} dan hitungan awal shiftmu. Shift {shift.nama} ditandai
+            &ldquo;tidak ditutup&rdquo; untuk owner. Pilih ini jika kamu crew shift berikutnya.
+          </small>
+        </button>
+        <button type="button" className="tombol-besar" onClick={() => onPilih('tutup')}>
+          <strong>Saya ikut shift ini dan menutupnya</strong>
+          <br />
+          <small>Pilih ini jika kamu bekerja di shift {shift.nama} bersama {shift.dibukaOleh}. Namamu tercatat sebagai yang menutup.</small>
+        </button>
+      </div>
+    </>
+  );
+}
+
 function TutupShift({ shift, onSelesai, onBukaBaru }) {
   const { api } = useSesi();
   return (
@@ -82,7 +110,9 @@ function TutupShift({ shift, onSelesai, onBukaBaru }) {
 }
 
 export default function Shift() {
+  const { pengguna } = useSesi();
   const { data, galat, memuat, muatUlang } = useData('/shift/persiapan');
+  const [pilihan, setPilihan] = useState(null); // null | 'tutup' | 'baru' (hanya untuk shift milik orang lain)
   const [pesan, setPesan] = useState(null);
   const [paksaBuka, setPaksaBuka] = useState(false);
   // Shift yang baru saja ditutup di layar ini. Selama data belum dimuat ulang, shift ini
@@ -92,6 +122,7 @@ export default function Shift() {
   const selesai = (teks, idDitutup = null) => {
     setPesan(teks);
     setPaksaBuka(false);
+    setPilihan(null);
     setBaruDitutup(idDitutup);
     muatUlang();
   };
@@ -100,10 +131,16 @@ export default function Shift() {
   if (galat) return <PesanGalat galat={galat} ulangi={muatUlang} />;
 
   const terbuka = data.shiftTerbuka?.id === baruDitutup ? null : data.shiftTerbuka;
+  const milikOrangLain = Boolean(terbuka && pengguna && terbuka.dibukaOlehId !== pengguna.id);
   return (
     <section className="sempit">
       {pesan && <Pesan jenis="sukses">{pesan}</Pesan>}
-      {terbuka && !paksaBuka ? (
+      {milikOrangLain && pilihan && (
+        <p><button type="button" className="tautan tanpa-jarak" onClick={() => setPilihan(null)}>← Ganti pilihan</button></p>
+      )}
+      {milikOrangLain && !pilihan && !paksaBuka ? (
+        <PilihLanjutan shift={terbuka} onPilih={(p) => { setPesan(null); setPilihan(p); }} />
+      ) : terbuka && !paksaBuka && pilihan !== 'baru' ? (
         <TutupShift key={terbuka.id} shift={terbuka} onSelesai={selesai} onBukaBaru={() => { setPesan(null); setPaksaBuka(true); }} />
       ) : (
         <BukaShift key={terbuka?.id ?? 'baru'} persiapan={data} lupaDitutup={terbuka} onSelesai={selesai} />

@@ -172,3 +172,6 @@ details.kartu summary { cursor: pointer; font-weight: 600; }
 .kisi-angka { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; }
 .kisi-angka .kartu { display: flex; flex-direction: column; gap: 0.25rem; margin: 0; }
 .kisi-angka strong { font-size: 1.3rem; }
+.pilihan-besar { display: grid; gap: 0.75rem; }
+.pilihan-besar .tombol-besar { margin: 0; }
+.tautan.tanpa-jarak { margin-left: 0; }

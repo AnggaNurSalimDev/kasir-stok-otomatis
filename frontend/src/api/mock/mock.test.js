@@ -324,3 +324,10 @@ describe('daftar per shift untuk crew', () => {
     expect(keluar.data[0]).toMatchObject({ jumlah: 10000, keterangan: 'Es batu', oleh: 'Rina' });
   });
 });
+
+describe('shift aktif menyebut siapa yang membuka', () => {
+  it('dibukaOlehId dan nama', async () => {
+    await bukaPagi(SEMUA_KUNCI, 'dimas');
+    expect(await panggil('/shift/aktif', 'GET', undefined, 'sari')).toMatchObject({ dibukaOlehId: 'dimas', dibukaOleh: 'Dimas' });
+  });
+});
