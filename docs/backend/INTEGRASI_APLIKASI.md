@@ -71,7 +71,22 @@ CREATE TABLE pesanan_masuk (
   UNIQUE (outlet_id, saluran, nomor_pesanan)
 );
 
--- Menu yang dibuat langsung di aplikasi (paket) → isi menurut resep kasir, misalnya
+-- Paket promo khusus aplikasi, dirancang di kasir dan dikirim ke platform saat sinkron menu (kode "paket:<id>").
+-- Jalur utama: pesanannya langsung dikenali, tanpa pemetaan.
+CREATE TABLE paket (
+  id uuid PRIMARY KEY, outlet_id uuid REFERENCES outlet,
+  nama text NOT NULL, aktif boolean NOT NULL DEFAULT true,
+  harga_saluran jsonb NOT NULL,     -- { gofood: 30500, … }, minimal satu; kosong = tidak dijual di sana
+  UNIQUE (outlet_id, lower(nama))
+);
+CREATE TABLE paket_isi (
+  paket_id uuid REFERENCES paket ON DELETE CASCADE,
+  menu_id uuid NOT NULL, ukuran text NOT NULL, qty int NOT NULL CHECK (qty BETWEEN 1 AND 10),
+  PRIMARY KEY (paket_id, menu_id, ukuran)
+);
+-- Ubah menu: ukuran yang dipakai paket tidak boleh dihapus (409).
+
+-- Cadangan: menu yang terlanjur dibuat langsung di aplikasi → isi menurut resep kasir, misalnya
 -- "Paket Berdua" = 1 Thai Tea Regular + 1 Kopi Susu Regular. Harga paket dibagi sebanding harga kasir
 -- (logika/saluran.js: bagiHarga), supaya total transaksi = yang dibayar pelanggan.
 CREATE TABLE pemetaan_menu (
@@ -109,7 +124,8 @@ Terima pesanan = satu transaksi DB: `SELECT … FOR UPDATE` pada `pesanan_masuk`
 | `PUT /saluran/:id/pemetaan` | owner | sama dengan mock: `{ kode, isi: [{ menuId, ukuran, qty }] }` (1–6 menu) |
 | `DELETE /saluran/:id/pemetaan/:kode` | owner | isi paket berubah → hapus, petakan ulang saat dipesan lagi |
 | `PUT /harga-saluran` | owner | harga aplikasi semua menu & topping sekaligus, satu transaksi DB |
-| `POST /saluran/:id/sinkron-menu` | owner | dorong menu + harga saluran kasir ke platform (kode = `menuId:ukuran`) |
+| `POST /saluran/:id/sinkron-menu` | owner | dorong menu, topping, dan **paket aktif yang punya harga di saluran itu** ke platform (kode `menuId:ukuran` / `paket:<id>`) |
+| `GET/POST/PUT /paket` | owner (GET: semua) | sama dengan mock; transaksi menyimpan item hasil urai + `kelompok` untuk struk |
 | `POST /transaksi/:id/batal` | crew (shift berjalan), owner | pesanan aplikasi manual |
 
 Endpoint mock `/integrasi/:saluran/pesanan` dan `/integrasi/:saluran/batal` **tidak dibawa** ke backend; perannya diganti `/webhook/*`.

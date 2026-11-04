@@ -88,6 +88,11 @@ export default {
     { id: 'tpExtraShot', nama: 'Extra Shot', harga: 5000, resep: [r('bijiKopi', 1, 'shot')] },
     { id: 'tpOreo', nama: 'Oreo Crumble', harga: 4000, resep: [r('oreo', 2, 'keping')] },
   ],
+  // Paket promo khusus aplikasi (harga di aplikasi dibuat saat katalog disiapkan).
+  paket: [
+    { id: 'berdua', nama: 'Paket Berdua', isi: [{ menuId: 'thaiTea', ukuran: 'Regular', qty: 1 }, { menuId: 'kopiSusu', ukuran: 'Regular', qty: 1 }] },
+    { id: 'bertiga', nama: 'Paket Hemat Bertiga', isi: [{ menuId: 'thaiTea', ukuran: 'Regular', qty: 2 }, { menuId: 'greenThaiTea', ukuran: 'Regular', qty: 1 }] },
+  ],
   // Stok fisik awal (satuan dasar).
   fisikAwal: {
     creamer: 3000, gula: 25000, airThaiTea: 4000, airGreenTea: 3000, creamerCair: 2000, susuCair: 4000,

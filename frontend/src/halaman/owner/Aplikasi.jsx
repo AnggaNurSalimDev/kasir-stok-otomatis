@@ -9,8 +9,9 @@ import { useSesi } from '../../sesi/SesiContext.jsx';
 import { useData } from '../../komponen/useData.js';
 import { Memuat, Pesan, PesanGalat } from '../../komponen/umum.jsx';
 import { Isian, RingkasanGalat, useKirim, GalatForm } from '../../komponen/form.jsx';
-import { angkaDari, angkaBulatDari } from '../../komponen/formAngka.js';
+import { angkaDari } from '../../komponen/formAngka.js';
 import HargaAplikasi from './HargaAplikasi.jsx';
+import EditorIsiPaket, { isiKosong, isiKeBody, kalimatIsi } from '../../komponen/EditorIsiPaket.jsx';
 
 // Cara menyambungkan sungguhan (per November 2026, dari dokumentasi publik platform). Periksa lagi saat mendaftar.
 const CARA = {
@@ -133,16 +134,20 @@ Crew tekan Terima → transaksi + stok bahan berkurang otomatis, tanpa mengetik 
 function PenjelasanPemetaan({ terbuka }) {
   return (
     <details className="kartu penjelasan" open={terbuka}>
-      <summary><strong>Apa itu pemetaan menu?</strong></summary>
+      <summary><strong>Apa itu pemetaan menu, dan bagaimana menghindarinya?</strong></summary>
       <p>
         Kasir mengurangi stok berdasarkan <strong>resep</strong>. Jadi setiap menu yang dipesan lewat aplikasi harus jelas: menu ini memakai resep kasir yang mana?
       </p>
       <ul>
-        <li><strong>Menu yang dikirim dari kasir ke aplikasi</strong> (misalnya Thai Tea Large) langsung dikenali. Tidak perlu diatur apa-apa.</li>
-        <li><strong>Menu yang dibuat langsung di aplikasi</strong>, misalnya <em>Paket Berdua</em> atau <em>Promo Gajian</em>, tidak dikenali kasir: kasir tidak tahu isinya.</li>
+        <li><strong>Menu dan paket yang dibuat di kasir</strong> dikirim ke aplikasi bersama kodenya, jadi pesanannya <strong>langsung dikenali</strong>.</li>
+        <li><strong>Menu yang dibuat langsung di aplikasi</strong> (misalnya <em>Promo Gajian</em> yang diketik di GoFood Merchant) tidak dikenali kasir: kasir tidak tahu isinya.</li>
       </ul>
-      <p>Pemetaan artinya <strong>memberi tahu kasir isi menu itu, cukup sekali</strong>:</p>
-      <pre className="alur">{`Pesanan GoFood:   1× Paket Berdua                (menu buatan di aplikasi)
+      <p>
+        <strong>Cara terbaik: rancang paket promo di kasir</strong>, di <Link to="/owner/menu#paket">Menu &amp; resep → Paket</Link>. Isi dan harganya diatur di sana,
+        lalu dikirim ke aplikasi. Dengan begitu kejadian "menu tidak dikenali" tidak terjadi.
+      </p>
+      <p>Pemetaan di halaman ini adalah <strong>cadangan</strong> untuk menu yang terlanjur dibuat di aplikasi. Isinya cukup diberi tahu sekali:</p>
+      <pre className="alur">{`Pesanan GoFood:   1× Promo Gajian                (dibuat di aplikasi, kasir tidak tahu isinya)
                          │
                          │  pemetaan (diisi owner sekali)
                          ▼
@@ -150,41 +155,27 @@ Resep kasir:      1× Thai Tea Regular   +   1× Kopi Susu Regular
                          │                          │
 Stok berkurang:   creamer, air thai tea…     biji kopi, susu cair…`}</pre>
       <p>
-        Setelah dipetakan, setiap pesanan Paket Berdua berikutnya langsung dikenali dan stoknya berkurang sendiri.
         Sebelum dipetakan, pesanan yang berisi menu itu <strong>tidak bisa diterima</strong> crew. Ini disengaja: lebih baik menunggu sebentar daripada stok berkurang dengan resep yang salah.
+        Lebih baik lagi: buat ulang menu itu sebagai paket di kasir, lalu hapus versi buatan aplikasinya.
       </p>
-      <p className="bantuan">Harga paket tetap mengikuti harga di aplikasi (yang dibayar pelanggan). Pemetaan hanya menentukan bahan yang terpakai.</p>
+      <p className="bantuan">Harga tetap mengikuti harga di aplikasi (yang dibayar pelanggan). Pemetaan hanya menentukan bahan yang terpakai.</p>
     </details>
   );
 }
-
-const isiKosong = () => ({ menuId: '', ukuran: '', qty: '1' });
 
 function FormPemetaan({ saluran, item, menu, onSimpan }) {
   const { api } = useSesi();
   const [isi, setIsi] = useState([isiKosong()]);
   const kirim = useKirim();
-  const pf = kirim.perField;
-  const ubahBaris = (i, perubahan) => setIsi(isi.map((b, j) => (j === i ? { ...b, ...perubahan } : b)));
   const menuById = new Map(menu.map((m) => [m.id, m]));
-
-  // Kalimat pratinjau dari isian yang sudah lengkap: "1× Paket Berdua = 1× Thai Tea Regular + 1× Kopi Susu Regular"
-  const lengkap = isi.filter((b) => b.menuId && b.ukuran && angkaBulatDari(b.qty) >= 1);
-  const kalimat = lengkap.map((b) => `${angkaBulatDari(b.qty)}× ${menuById.get(b.menuId)?.nama} ${b.ukuran}`).join(' + ');
+  const kalimat = kalimatIsi(isi, menuById);
 
   const simpan = async (e) => {
     e.preventDefault();
     const hasil = await kirim.jalankan(() => {
-      const detail = [];
-      const body = isi.map((b, i) => {
-        const qty = angkaBulatDari(b.qty);
-        if (!b.menuId) detail.push({ field: `isi[${i}].menuId`, pesan: `Baris ${i + 1}: pilih menu` });
-        if (b.menuId && !b.ukuran) detail.push({ field: `isi[${i}].ukuran`, pesan: `Baris ${i + 1}: pilih ukuran` });
-        if (qty === null || qty < 1) detail.push({ field: `isi[${i}].qty`, pesan: `Baris ${i + 1}: jumlah minimal 1` });
-        return { menuId: b.menuId, ukuran: b.ukuran, qty: qty ?? 0 };
-      });
-      if (detail.length) throw new GalatForm(detail);
-      return api(`/saluran/${saluran.id}/pemetaan`, { method: 'PUT', body: { kode: item.kode, isi: body } });
+      const r = isiKeBody(isi);
+      if (r.detail.length) throw new GalatForm(r.detail);
+      return api(`/saluran/${saluran.id}/pemetaan`, { method: 'PUT', body: { kode: item.kode, isi: r.isi } });
     });
     if (hasil) onSimpan(`${item.nama} sekarang dikenali kasir.`);
   };
@@ -197,35 +188,7 @@ function FormPemetaan({ saluran, item, menu, onSimpan }) {
       </div>
       <p>Isi <strong>1 {item.nama}</strong> menurut resep kasir:</p>
       <RingkasanGalat galat={kirim.galat} />
-      {isi.map((b, i) => {
-        const m = menuById.get(b.menuId);
-        return (
-          <div key={i} className="baris-isi-paket">
-            <Isian label="Jumlah" galat={pf[`isi[${i}].qty`]}>
-              {(p) => <input {...p} className="angka" inputMode="numeric" value={b.qty} onChange={(e) => ubahBaris(i, { qty: e.target.value })} />}
-            </Isian>
-            <Isian label="Menu kasir" galat={pf[`isi[${i}].menuId`]}>
-              {(p) => (
-                <select {...p} value={b.menuId} onChange={(e) => ubahBaris(i, { menuId: e.target.value, ukuran: menuById.get(e.target.value)?.ukuran[0].nama ?? '' })}>
-                  <option value="">Pilih menu…</option>
-                  {menu.map((x) => <option key={x.id} value={x.id}>{x.nama}</option>)}
-                </select>
-              )}
-            </Isian>
-            <Isian label="Ukuran" galat={pf[`isi[${i}].ukuran`]}>
-              {(p) => (
-                <select {...p} value={b.ukuran} onChange={(e) => ubahBaris(i, { ukuran: e.target.value })} disabled={!m}>
-                  {!m && <option value="">–</option>}
-                  {m?.ukuran.map((u) => <option key={u.nama} value={u.nama}>{u.nama}</option>)}
-                </select>
-              )}
-            </Isian>
-            {isi.length > 1 && <button type="button" className="tombol-kecil" aria-label={`Hapus baris ${i + 1}`} onClick={() => setIsi(isi.filter((_, j) => j !== i))}>Hapus</button>}
-          </div>
-        );
-      })}
-      {pf.isi && <small className="teks-galat">{pf.isi}</small>}
-      {isi.length < 6 && <button type="button" className="tombol-kecil" onClick={() => setIsi([...isi, isiKosong()])}>+ Tambah menu lain di paket ini</button>}
+      <EditorIsiPaket baris={isi} onChange={setIsi} menu={menu} perField={kirim.perField} />
       <p className="pratinjau-pemetaan" aria-live="polite">
         {kalimat ? <>1× {item.nama} = <strong>{kalimat}</strong></> : <span className="teks-redup">Pilih menu untuk melihat hasilnya.</span>}
       </p>
@@ -249,7 +212,7 @@ function TabPemetaan({ saluran, menu, muatUlang }) {
 
       <h2 className="subjudul">Perlu dipetakan ({belum.length})</h2>
       {belum.length === 0 ? (
-        <p className="bantuan">Tidak ada. Semua menu di pesanan yang menunggu sudah dikenali kasir. Menu baru yang dibuat di aplikasi akan muncul di sini saat pertama kali dipesan.</p>
+        <p className="bantuan">Tidak ada. Semua menu di pesanan yang menunggu sudah dikenali kasir. Selama paket promo dirancang di kasir, bagian ini akan tetap kosong.</p>
       ) : (
         belum.map(({ s, item }) => <FormPemetaan key={`${s.id}-${item.kode}`} saluran={s} item={item} menu={menu} onSimpan={selesai} />)
       )}

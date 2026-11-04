@@ -69,6 +69,10 @@ export default {
     { id: 'tpKaramel', nama: 'Sirup Karamel', harga: 4000, resep: [r('sirupKaramel', 2, 'pump')] },
     { id: 'tpVanila', nama: 'Sirup Vanila', harga: 4000, resep: [r('sirupVanila', 2, 'pump')] },
   ],
+  // Paket promo khusus aplikasi (harga di aplikasi dibuat saat katalog disiapkan).
+  paket: [
+    { id: 'ngopiBerdua', nama: 'Paket Ngopi Berdua', isi: [{ menuId: 'kopiSusu', ukuran: 'Dingin', qty: 2 }, { menuId: 'croissant', ukuran: 'Pcs', qty: 1 }] },
+  ],
   fisikAwal: {
     bijiKopi: 3000, susuCair: 8000, sirupAren: 750, sirupVanila: 750, sirupKaramel: 750, bubukCoklat: 1000, skm: 740,
     croissant: 24, cupPanas: 150, cupDingin: 150,

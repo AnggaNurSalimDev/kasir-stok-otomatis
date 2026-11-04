@@ -85,9 +85,19 @@ export const TutupShiftBody = z.object({ hitungan: Hitungan, kasAkhir: rupiah.op
 export const OpnameBody = z.object({ hitungan: Hitungan }).strict();
 
 // ---------- transaksi ----------
+// Item keranjang: menu biasa { menuId, ukuran, toppingIds, qty } atau paket (khusus aplikasi) { paketId, qty }.
 export const ItemKeranjang = z
-  .object({ menuId: id, ukuran: teks(20), toppingIds: z.array(id).max(10).default([]), qty: z.number().int().min(1).max(99) })
-  .strict();
+  .object({ menuId: id.optional(), ukuran: teks(20).optional(), toppingIds: z.array(id).max(10).default([]), paketId: id.optional(), qty: z.number().int().min(1).max(99) })
+  .strict()
+  .superRefine((it, ctx) => {
+    if (it.paketId !== undefined) {
+      if (it.menuId !== undefined || it.ukuran !== undefined) ctx.addIssue({ code: 'custom', path: ['paketId'], message: 'Item paket tidak memakai menuId/ukuran' });
+      if (it.toppingIds.length) ctx.addIssue({ code: 'custom', path: ['toppingIds'], message: 'Paket tidak bisa diberi topping' });
+    } else {
+      if (it.menuId === undefined) ctx.addIssue({ code: 'custom', path: ['menuId'], message: 'Wajib diisi' });
+      if (it.ukuran === undefined) ctx.addIssue({ code: 'custom', path: ['ukuran'], message: 'Wajib diisi' });
+    }
+  });
 
 // Pesanan aplikasi yang dicatat manual: saluran online + nomor pesanan + dibayar lewat aplikasi (tidak masuk laci).
 export const TransaksiBody = z
@@ -186,11 +196,27 @@ export const PemetaanBody = z
     if (new Set(k).size !== k.length) ctx.addIssue({ code: 'custom', path: ['isi'], message: 'Menu dan ukuran yang sama ditulis dua kali; gabungkan jumlahnya' });
   });
 
+// Paket promo khusus aplikasi: dirancang di kasir, isinya menu kasir, harga per aplikasi (yang kosong = tidak dijual di sana).
+export const PaketBody = z
+  .object({
+    nama: teks(60),
+    isi: z.array(IsiPaket).min(1, 'Minimal 1 menu').max(6, 'Maksimal 6 menu'),
+    hargaSaluran: HargaSaluran,
+    aktif: z.boolean().default(true),
+  })
+  .strict()
+  .superRefine((p, ctx) => {
+    const k = p.isi.map((i) => `${i.menuId}|${i.ukuran}`);
+    if (new Set(k).size !== k.length) ctx.addIssue({ code: 'custom', path: ['isi'], message: 'Menu dan ukuran yang sama ditulis dua kali; gabungkan jumlahnya' });
+    if (Object.keys(p.hargaSaluran).length === 0) ctx.addIssue({ code: 'custom', path: ['hargaSaluran'], message: 'Isi harga minimal di satu aplikasi (paket hanya dijual di aplikasi)' });
+  });
+
 // Simpan harga aplikasi untuk banyak menu sekaligus (satu request, atomik).
 export const HargaSaluranMassalBody = z
   .object({
     menu: z.array(z.object({ id, ukuran: z.array(z.object({ nama: teks(20), hargaSaluran: HargaSaluran }).strict()).min(1) }).strict()).max(200),
     topping: z.array(z.object({ id, hargaSaluran: HargaSaluran }).strict()).max(100),
+    paket: z.array(z.object({ id, hargaSaluran: HargaSaluran }).strict()).max(100).default([]),
   })
   .strict();
 

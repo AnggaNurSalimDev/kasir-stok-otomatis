@@ -23,7 +23,7 @@ export function saringTransaksi(transaksi, f) {
     if (f.kasir && t.kasir !== f.kasir) return false;
     if (f.status === 'sah' && t.batal) return false;
     if (f.status === 'batal' && !t.batal) return false;
-    if (cari && !t.item.some((it) => `${it.nama} ${it.ukuran ?? ''} ${it.namaAplikasi ?? ''}`.toLowerCase().includes(cari)) && !(t.nomorPesanan ?? '').toLowerCase().includes(cari)) return false;
+    if (cari && !t.item.some((it) => `${it.nama} ${it.ukuran ?? ''} ${it.namaAplikasi ?? ''} ${it.paket ?? ''} ${it.kelompok?.nama ?? ''}`.toLowerCase().includes(cari)) && !(t.nomorPesanan ?? '').toLowerCase().includes(cari)) return false;
     return true;
   });
 }

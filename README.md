@@ -34,10 +34,11 @@ Di aplikasi ini **crew tidak pernah menghitung satuan**. Owner menulis resep sek
 - **Detail shift**: `seharusnya = awal + masuk − pakai`, `selisih = akhir − seharusnya`, dengan status *wajar* / *perlu dicek* berdasarkan toleransi per bahan.
 - **Bahan & satuan**: satuan dasar bebas, satuan bantu dengan konversi wajib (sendok, garis gelas, karung, panci), toleransi, saran toleransi dari riwayat 10+ shift.
 - **Menu & resep**: resep per ukuran dengan hasil konversi langsung di setiap baris, harga per aplikasi (kosong = harga toko).
+- **Paket promo khusus aplikasi** dirancang di kasir (isi = beberapa menu kasir, harga per aplikasi). Paket dikirim ke aplikasi dengan kode dari kasir, jadi pesanannya langsung dikenali, dan tidak muncul untuk pesanan di toko. Di struk tampil satu baris "1× Paket Berdua" dengan isinya.
 - **Aplikasi online** (tiga tab):
   - *Sambungan*: sambungkan/putuskan per aplikasi, perkiraan komisi.
   - *Harga di aplikasi*: satu tabel untuk semua menu, dengan tombol "saran impas" (harga ÷ (1 − komisi), supaya bersihnya sama dengan di toko) dan tanda ⚠ untuk harga yang bersihnya lebih kecil dari harga toko.
-  - *Pemetaan menu*: menu yang dibuat langsung di aplikasi (paket) dikenalkan sekali ke resep kasir, misalnya Paket Berdua = 1 Thai Tea + 1 Kopi Susu.
+  - *Pemetaan menu*: cadangan untuk menu yang terlanjur dibuat langsung di aplikasi, dikenalkan sekali ke resep kasir. Cara yang dianjurkan tetap membuat paketnya di kasir.
 - **Laporan** dengan rentang tanggal (≤ 31 hari, owner) dan filter saluran, pembayaran, shift, kasir, status batal, dan cari menu/nomor pesanan. Filter tersimpan di alamat halaman, jadi bisa dibuka ulang atau dikirim.
 
 ![Detail shift: creamer boros 12,5% ditandai, bahan lain wajar](docs/gambar/detail-shift.png)

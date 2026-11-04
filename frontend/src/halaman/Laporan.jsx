@@ -13,6 +13,7 @@ import { useData } from '../komponen/useData.js';
 import { Memuat, PesanGalat } from '../komponen/umum.jsx';
 import { formatAngka, formatRupiah } from '../komponen/formAngka.js';
 import { NAMA_SALURAN, SALURAN } from '../../../logika/saluran.js';
+import { kelompokkanItem } from '../komponen/kelompokItem.js';
 import { bacaFilter, adaFilter, saringTransaksi, ringkasHasil, pilihanDari, rentangCepat, KUNCI_FILTER } from './laporanFilter.js';
 
 // Tanggal hari ini menurut zona Asia/Jakarta, format YYYY-MM-DD (sama seperti mock/backend).
@@ -165,9 +166,11 @@ export default function Laporan() {
                     <tr key={t.id} className={t.batal ? 'baris-batal' : undefined}>
                       <td>{banyakHari && <>{tanggalPendek(t.tanggal)}<br /></>}{jam(t.pada)}</td>
                       <td>
-                        {t.item.map((it, i) => (
-                          <div key={i}>{it.qty}× {it.nama} {it.ukuran}{it.toppings.length > 0 && <small> + {it.toppings.map((x) => x.nama).join(', ')}</small>}{it.namaAplikasi && it.namaAplikasi !== it.nama && <small className="teks-redup"> (dari {it.namaAplikasi})</small>}</div>
-                        ))}
+                        {kelompokkanItem(t.item).map((b, i) => (b.jenis === 'kelompok' ? (
+                          <div key={i}>{b.qty}× {b.nama} <small className="teks-redup">({b.sumber === 'paket' ? 'paket' : 'menu aplikasi'}: {b.isi.map((it) => `${it.qty}× ${it.nama} ${it.ukuran}`).join(' + ')})</small></div>
+                        ) : (
+                          <div key={i}>{b.item.qty}× {b.item.nama} {b.item.ukuran}{b.item.toppings.length > 0 && <small> + {b.item.toppings.map((x) => x.nama).join(', ')}</small>}</div>
+                        )))}
                       </td>
                       <td>
                         {t.saluran === 'toko' ? LABEL_BAYAR[t.metodeBayar] : <>{t.namaSaluran}<br /><small>{t.nomorPesanan}{t.otomatis ? ' · otomatis' : ''}</small></>}

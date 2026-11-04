@@ -71,7 +71,11 @@ function nomorDipakai(st, saluran, nomor) {
 }
 
 function indeksKatalog(st) {
-  return { menuById: new Map(st.menu.map((m) => [m.id, m])), toppingById: new Map(st.topping.map((t) => [t.id, t])) };
+  return {
+    menuById: new Map(st.menu.map((m) => [m.id, m])),
+    toppingById: new Map(st.topping.map((t) => [t.id, t])),
+    paketById: new Map((st.paket ?? []).map((p) => [p.id, p])),
+  };
 }
 
 // Setiap item pesanan aplikasi dicocokkan ke menu kasir saat dibaca (pemetaan bisa ditambah belakangan).
@@ -88,11 +92,14 @@ function tampilPesanan(st, p) {
       const menu = st.menu.find((m) => m.id === k.menuId);
       return { menuId: menu.id, nama: menu.nama, ukuran: k.ukuran, qty: k.qty };
     });
-    const paket = Boolean(st.pemetaan[p.saluran]?.[it.kode]);
+    const dipetakan = Boolean(st.pemetaan[p.saluran]?.[it.kode]);
+    const paketKasir = cocok.paketId ? st.paket.find((x) => x.id === cocok.paketId) : null;
+    // Pembanding harga: paket kasir → harga paket di saluran itu; menu sinkron → harga menu; pemetaan → tidak ada pembanding.
+    const hargaKasir = paketKasir ? paketKasir.hargaSaluran[p.saluran] : dipetakan ? undefined : hargaKasirIsi(st, cocok.isi, p.saluran)[0];
     return {
-      kode: it.kode, nama: it.nama, qty: it.qty, harga: it.harga, topping: it.topping, masalah: null, isiKasir, paket,
-      // Harga paket memang tidak punya pembanding di kasir; yang dibandingkan hanya menu hasil sinkron.
-      hargaBerbeda: !paket && hargaKasirIsi(st, cocok.isi, p.saluran)[0] !== it.harga,
+      kode: it.kode, nama: it.nama, qty: it.qty, harga: it.harga, topping: it.topping, masalah: null, isiKasir,
+      sumber: paketKasir ? 'paket' : dipetakan ? 'pemetaan' : 'menu',
+      hargaBerbeda: hargaKasir !== undefined && hargaKasir !== it.harga,
     };
   });
   const trx = p.transaksiId ? st.transaksi.find((t) => t.id === p.transaksiId) : null;
@@ -468,8 +475,52 @@ daftar('PUT', '/menu/:id', OWNER, S.MenuBody, ({ st, body, params }) => {
   const m = st.menu.find((x) => x.id === params.id);
   if (!m) throw tidakAda('Menu');
   periksaMenu(st, body);
+  // Ukuran yang menjadi isi paket tidak boleh hilang: paketnya akan rusak.
+  const ukuranBaru = new Set(body.ukuran.map((u) => u.nama));
+  const terpakai = (st.paket ?? []).filter((p) => p.isi.some((k) => k.menuId === m.id && !ukuranBaru.has(k.ukuran)));
+  if (terpakai.length) throw konflik(`Ukuran ini masih dipakai di ${terpakai.map((p) => p.nama).join(', ')}. Ubah isi paketnya dulu.`);
   Object.assign(m, body); // transaksi lama punya salinan pemakaian sendiri (A-07)
   return m;
+});
+
+// ---------- paket (khusus aplikasi) ----------
+function periksaPaket(st, body) {
+  const detail = [];
+  body.isi.forEach((k, i) => {
+    const menu = st.menu.find((m) => m.id === k.menuId);
+    if (!menu) detail.push({ field: `isi[${i}].menuId`, pesan: 'Menu tidak ditemukan' });
+    else if (!menu.ukuran.some((u) => u.nama === k.ukuran)) detail.push({ field: `isi[${i}].ukuran`, pesan: `Ukuran "${k.ukuran}" tidak ada di ${menu.nama}` });
+  });
+  if (detail.length) throw validasi('Paket tidak valid', detail);
+}
+
+const tampilPaket = (st, p) => ({
+  ...p,
+  isi: p.isi.map((k) => ({ ...k, nama: st.menu.find((m) => m.id === k.menuId)?.nama ?? k.menuId })),
+  // Pembanding untuk owner: harga isi paket jika dibeli terpisah di toko.
+  hargaIsiToko: p.isi.reduce((a, k) => a + (st.menu.find((m) => m.id === k.menuId)?.ukuran.find((u) => u.nama === k.ukuran)?.harga ?? 0) * k.qty, 0),
+  kode: `paket:${p.id}`,
+});
+
+daftar('GET', '/paket', SEMUA, null, ({ st }) => (st.paket ?? []).map((p) => tampilPaket(st, p)));
+
+daftar('POST', '/paket', OWNER, S.PaketBody, (ctx) => {
+  const { st, body } = ctx;
+  periksaPaket(st, body);
+  if ((st.paket ?? []).some((p) => p.nama.trim().toLowerCase() === body.nama.trim().toLowerCase())) throw validasi('Paket tidak valid', [{ field: 'nama', pesan: `Paket "${body.nama}" sudah ada` }]);
+  const p = { id: ctx.id('paket'), ...body };
+  st.paket = [...(st.paket ?? []), p];
+  ctx.status = 201;
+  return tampilPaket(st, p);
+});
+
+daftar('PUT', '/paket/:id', OWNER, S.PaketBody, ({ st, body, params }) => {
+  const p = (st.paket ?? []).find((x) => x.id === params.id);
+  if (!p) throw tidakAda('Paket');
+  periksaPaket(st, body);
+  if (st.paket.some((x) => x.id !== p.id && x.nama.trim().toLowerCase() === body.nama.trim().toLowerCase())) throw validasi('Paket tidak valid', [{ field: 'nama', pesan: `Paket "${body.nama}" sudah ada` }]);
+  Object.assign(p, body); // transaksi lama punya salinan item dan pemakaian sendiri (A-07)
+  return tampilPaket(st, p);
 });
 
 daftar('POST', '/topping', OWNER, S.ToppingBody, (ctx) => {
@@ -611,7 +662,9 @@ daftar('GET', '/shift/:id', OWNER, null, ({ st, params }) => {
 // Satu jalur untuk semua transaksi: kasir di toko, pesanan aplikasi yang dicatat manual, dan pesanan otomatis yang diterima.
 //   item       [{ menuId, ukuran, toppingIds, qty }]  → stok dikurangi lewat resep
 //   hargaItem  (opsional, pesanan otomatis) subtotal per item dari aplikasi; tanpa ini harga dihitung dari menu
-function catatTransaksi(ctx, { item: itemBody, saluran = 'toko', nomorPesanan = null, metodeBayar, uangDiterima, hargaItem = null, namaAplikasi = null, pesananId = null }) {
+// kelompok[i] (opsional): { ke, nama, qty, jenis: 'paket' | 'pemetaan' } — item hasil urai satu paket/menu aplikasi,
+// supaya struk & laporan bisa menampilkannya kembali sebagai satu baris "2× Paket Berdua".
+function catatTransaksi(ctx, { item: itemBody, saluran = 'toko', nomorPesanan = null, metodeBayar, uangDiterima, hargaItem = null, namaAplikasi = null, namaPaket = null, kelompok = null, pesananId = null }) {
   const { st } = ctx;
   const shift = wajibShiftTerbuka(st);
   const katalog = { bahan: st.bahan, menu: st.menu, topping: st.topping };
@@ -631,7 +684,9 @@ function catatTransaksi(ctx, { item: itemBody, saluran = 'toko', nomorPesanan = 
     return {
       menuId: menu.id, nama: menu.nama, ukuran: ukuran.nama, toppings, qty: it.qty,
       hargaSatuan: hargaItem ? null : hargaSatuan, subtotal,
-      ...(namaAplikasi ? { namaAplikasi: namaAplikasi[i] } : {}),
+      ...(namaAplikasi?.[i] ? { namaAplikasi: namaAplikasi[i] } : {}),
+      ...(namaPaket?.[i] ? { paket: namaPaket[i] } : {}),
+      ...(kelompok?.[i] ? { kelompok: kelompok[i] } : {}),
     };
   });
   const total = jumlahUang(item.map((i) => ({ total: i.subtotal })));
@@ -679,10 +734,49 @@ daftar('POST', '/transaksi', SEMUA, S.TransaksiBody, (ctx) => {
     if (setel.mode === 'otomatis') throw konflik(`Pesanan ${nama} masuk otomatis. Terima di halaman Pesanan online.`);
     if (nomorDipakai(st, body.saluran, body.nomorPesanan)) throw konflik(`Pesanan ${nama} nomor ${body.nomorPesanan} sudah tercatat.`);
   }
-  const { trx, peringatanMinus } = catatTransaksi(ctx, { ...body, nomorPesanan: body.nomorPesanan ?? null });
+  const { trx, peringatanMinus } = catatTransaksi(ctx, { ...uraikanKeranjang(st, body.item, body.saluran), saluran: body.saluran, nomorPesanan: body.nomorPesanan ?? null, metodeBayar: body.metodeBayar, uangDiterima: body.uangDiterima });
   ctx.status = 201;
   return tampilStruk(st, trx, peringatanMinus);
 });
+
+// Keranjang kasir → item menu. Paket (khusus aplikasi) diurai jadi menu isinya; harga paket dibagi sebanding
+// harga kasir supaya total = harga paket. Tanpa paket: harga dihitung biasa (hargaItem null).
+function uraikanKeranjang(st, itemBody, saluran) {
+  if (!itemBody.some((it) => it.paketId)) return { item: itemBody };
+  const detail = [];
+  const item = [];
+  const hargaItem = [];
+  const namaPaket = [];
+  const kelompok = [];
+  itemBody.forEach((it, i) => {
+    if (!it.paketId) {
+      kelompok.push(null);
+      const menu = st.menu.find((m) => m.id === it.menuId);
+      const ukuran = menu?.ukuran.find((u) => u.nama === it.ukuran);
+      const toppingOk = it.toppingIds.every((tid) => st.topping.some((t) => t.id === tid));
+      item.push(it);
+      // Menu/ukuran/topping salah dilaporkan hitungPemakaian; di sini cukup harga yang bisa dihitung.
+      hargaItem.push(ukuran && toppingOk ? (hargaDi(ukuran, saluran) + it.toppingIds.reduce((a, tid) => a + hargaDi(st.topping.find((t) => t.id === tid), saluran), 0)) * it.qty : 0);
+      namaPaket.push(null);
+      return;
+    }
+    const paket = st.paket.find((p) => p.id === it.paketId);
+    if (!paket || !paket.aktif) return detail.push({ field: `item[${i}].paketId`, pesan: 'Paket tidak ditemukan atau sudah nonaktif' });
+    if (saluran === 'toko') return detail.push({ field: `item[${i}].paketId`, pesan: `${paket.nama} hanya dijual di aplikasi` });
+    const harga = paket.hargaSaluran[saluran];
+    if (!Number.isInteger(harga)) return detail.push({ field: `item[${i}].paketId`, pesan: `${paket.nama} tidak dijual di ${NAMA_SALURAN[saluran]}` });
+    const isi = paket.isi.map((k) => ({ menuId: k.menuId, ukuran: k.ukuran, qty: k.qty, toppingIds: [] }));
+    const bagian = bagiHarga(harga * it.qty, hargaKasirIsi(st, isi, saluran));
+    isi.forEach((k, j) => {
+      item.push({ menuId: k.menuId, ukuran: k.ukuran, toppingIds: [], qty: k.qty * it.qty });
+      hargaItem.push(bagian[j]);
+      namaPaket.push(paket.nama);
+      kelompok.push({ ke: i, nama: paket.nama, qty: it.qty, jenis: 'paket' });
+    });
+  });
+  if (detail.length) throw validasi('Pesanan tidak valid', detail);
+  return { item, hargaItem, namaPaket, kelompok };
+}
 
 // Pembatalan pesanan aplikasi (dari crew untuk pesanan manual, atau dari aplikasi lewat webhook).
 // Minuman biasanya sudah dibuat: penjualan tidak dihitung, tetapi bahan TETAP tercatat terpakai.
@@ -770,7 +864,8 @@ daftar('PUT', '/saluran/:id/pemetaan', OWNER, S.PemetaanBody, ({ st, params, bod
     else if (!menu.ukuran.some((u) => u.nama === k.ukuran)) detail.push({ field: `isi[${i}].ukuran`, pesan: `Ukuran "${k.ukuran}" tidak ada di ${menu.nama}` });
   });
   if (detail.length) throw validasi('Pemetaan tidak valid', detail);
-  // Kode hasil sinkron menu kasir sudah dikenali; memetakannya ulang hanya membuat bingung.
+  // Kode hasil sinkron menu/paket kasir sudah dikenali; memetakannya ulang hanya membuat bingung.
+  if (body.kode.startsWith('paket:')) throw konflik('Ini paket dari kasir, sudah dikenali. Ubah isinya di Menu & resep → Paket.');
   const i = body.kode.lastIndexOf(':');
   if (i > 0 && st.menu.find((m) => m.id === body.kode.slice(0, i))?.ukuran.some((u) => u.nama === body.kode.slice(i + 1))) {
     throw konflik('Menu ini sudah dikenali kasir (disinkron dari menu kasir). Tidak perlu dipetakan.');
@@ -804,8 +899,14 @@ daftar('PUT', '/harga-saluran', OWNER, S.HargaSaluranMassalBody, ({ st, body }) 
     if (!tp) detail.push({ field: `topping[${i}].id`, pesan: `Topping "${t.id}" tidak ditemukan` });
     else tp.hargaSaluran = t.hargaSaluran;
   });
+  body.paket.forEach((x, i) => {
+    const pk = (st.paket ?? []).find((y) => y.id === x.id);
+    if (!pk) detail.push({ field: `paket[${i}].id`, pesan: `Paket "${x.id}" tidak ditemukan` });
+    else if (Object.keys(x.hargaSaluran).length === 0) detail.push({ field: `paket[${i}].hargaSaluran`, pesan: `${pk.nama}: isi harga minimal di satu aplikasi` });
+    else pk.hargaSaluran = x.hargaSaluran;
+  });
   if (detail.length) throw validasi('Harga tidak tersimpan', detail); // salinan kerja dibuang: tidak ada yang berubah
-  return { menu: st.menu, topping: st.topping };
+  return { menu: st.menu, topping: st.topping, paket: (st.paket ?? []).map((p) => tampilPaket(st, p)) };
 });
 
 // Pintu masuk pesanan dari aplikasi (webhook). Di mock dipanggil tombol "kirim pesanan contoh" dan pembuat data demo.
@@ -862,16 +963,23 @@ daftar('POST', '/pesanan-online/:id/terima', SEMUA, null, (ctx) => {
   const item = [];
   const hargaItem = [];
   const namaAplikasi = [];
-  for (const { it, cocok } of baris) {
+  const namaPaket = [];
+  const kelompok = [];
+  for (const [ke, { it, cocok }] of baris.entries()) {
     const bagian = bagiHarga(it.harga * it.qty, hargaKasirIsi(st, cocok.isi, p.saluran));
+    const paketKasir = cocok.paketId ? st.paket.find((x) => x.id === cocok.paketId) : null;
     cocok.isi.forEach((k, j) => {
       item.push({ menuId: k.menuId, ukuran: k.ukuran, toppingIds: k.toppingIds, qty: k.qty * it.qty });
       hargaItem.push(bagian[j]);
       namaAplikasi.push(it.nama);
+      namaPaket.push(paketKasir?.nama ?? null);
+      // Menu sinkron biasa (satu menu, tanpa paket/pemetaan) tidak perlu dikelompokkan.
+      const dipetakan = Boolean(st.pemetaan[p.saluran]?.[it.kode]);
+      kelompok.push(paketKasir || dipetakan ? { ke, nama: it.nama, qty: it.qty, jenis: paketKasir ? 'paket' : 'pemetaan' } : null);
     });
   }
   const { trx, peringatanMinus } = catatTransaksi(ctx, {
-    item, hargaItem, namaAplikasi,
+    item, hargaItem, namaAplikasi, namaPaket, kelompok,
     saluran: p.saluran, nomorPesanan: p.nomorPesanan, metodeBayar: 'aplikasi', pesananId: p.id,
   });
   Object.assign(p, { status: 'diterima', diprosesOleh: ctx.pengguna.id, diprosesPada: ctx.pada, transaksiId: trx.id });

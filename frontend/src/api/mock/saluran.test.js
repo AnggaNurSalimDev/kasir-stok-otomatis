@@ -198,7 +198,7 @@ describe('pemetaan paket isi campuran', () => {
     const p = await panggil('/integrasi/gofood/pesanan', 'POST', pesanan('F-PK', paket));
     await panggil('/saluran/gofood/pemetaan', 'PUT', { kode: 'PKT-1', isi: [{ menuId: 'thaiTea', ukuran: 'Regular', qty: 1 }, { menuId: 'kopiSusu', ukuran: 'Regular', qty: 1 }] }, 'owner');
     const tampil = (await panggil('/pesanan-online')).menunggu[0];
-    expect(tampil.item[0]).toMatchObject({ paket: true, hargaBerbeda: false, isiKasir: [{ nama: 'Thai Tea', qty: 1 }, { nama: 'Kopi Susu', qty: 1 }] });
+    expect(tampil.item[0]).toMatchObject({ sumber: 'pemetaan', hargaBerbeda: false, isiKasir: [{ nama: 'Thai Tea', qty: 1 }, { nama: 'Kopi Susu', qty: 1 }] });
     const { struk } = await panggil(`/pesanan-online/${p.id}/terima`, 'POST');
     expect(struk.total).toBe(60002); // 2 paket × 30.001, tidak ada rupiah yang hilang karena pembagian
     expect(struk.item.map((i) => [i.nama, i.qty])).toEqual([['Thai Tea', 2], ['Kopi Susu', 2]]);
@@ -245,6 +245,61 @@ describe('laporan rentang tanggal', () => {
   });
 });
 
+describe('paket khusus aplikasi (dirancang di kasir)', () => {
+  const PAKET_BERDUA = { kode: 'paket:berdua', nama: 'Paket Berdua', qty: 1, topping: [] };
+  const hargaPaket = async (saluran) => (await panggil('/paket')).find((p) => p.id === 'berdua').hargaSaluran[saluran];
+
+  it('pesanan berisi paket kasir langsung dikenali, tanpa pemetaan; isi tercatat dengan nama paket', async () => {
+    await buka();
+    const harga = await hargaPaket('gofood');
+    const p = await panggil('/integrasi/gofood/pesanan', 'POST', pesanan('F-P1', [{ ...PAKET_BERDUA, harga }]));
+    expect(p.siapDiterima).toBe(true);
+    expect(p.item[0]).toMatchObject({ sumber: 'paket', hargaBerbeda: false, isiKasir: [{ nama: 'Thai Tea' }, { nama: 'Kopi Susu' }] });
+    const { struk } = await panggil(`/pesanan-online/${p.id}/terima`, 'POST');
+    expect(struk.total).toBe(harga);
+    expect(struk.item.map((i) => [i.nama, i.paket])).toEqual([['Thai Tea', 'Paket Berdua'], ['Kopi Susu', 'Paket Berdua']]);
+  });
+
+  it('harga di aplikasi beda dengan harga paket di kasir → ditandai; paket nonaktif → tidak dikenali', async () => {
+    const p = await panggil('/integrasi/gofood/pesanan', 'POST', pesanan('F-P2', [{ ...PAKET_BERDUA, harga: 1000 }]));
+    expect(p.hargaBerbeda).toBe(true);
+    const paket = (await panggil('/paket')).find((x) => x.id === 'berdua');
+    await panggil('/paket/berdua', 'PUT', { nama: paket.nama, isi: paket.isi.map(({ menuId, ukuran, qty }) => ({ menuId, ukuran, qty })), hargaSaluran: paket.hargaSaluran, aktif: false }, 'owner');
+    expect((await panggil('/pesanan-online')).menunggu[0].item[0].masalah).toMatch(/dinonaktifkan/);
+  });
+
+  it('dicatat manual (ShopeeFood): paket diurai jadi isinya, total = harga paket; di toko ditolak', async () => {
+    await buka();
+    const harga = await hargaPaket('shopeefood');
+    const item = [{ paketId: 'berdua', qty: 2 }, { menuId: 'americano', ukuran: 'Regular', toppingIds: [], qty: 1 }];
+    const struk = await panggil('/transaksi', 'POST', { item, saluran: 'shopeefood', nomorPesanan: 'SF-P', metodeBayar: 'aplikasi' });
+    expect(struk.total).toBe(harga * 2 + 16500); // americano 13.000 → impas 16.500
+    expect(struk.item.map((i) => i.qty)).toEqual([2, 2, 1]);
+    expect((await galat(panggil('/transaksi', 'POST', { item: [{ paketId: 'berdua', qty: 1 }], metodeBayar: 'qris' }))).message).toMatch(/tidak valid/);
+    expect((await galat(panggil('/transaksi', 'POST', { item: [{ paketId: 'berdua', menuId: 'thaiTea', qty: 1 }], saluran: 'shopeefood', nomorPesanan: 'X', metodeBayar: 'aplikasi' }))).status).toBe(400);
+  });
+
+  it('owner membuat paket: wajib harga minimal satu aplikasi, isi valid, nama unik; crew tidak bisa', async () => {
+    const isi = [{ menuId: 'thaiTea', ukuran: 'Large', qty: 2 }];
+    expect((await galat(panggil('/paket', 'POST', { nama: 'Duo Large', isi, hargaSaluran: {} }, 'owner'))).perField).toHaveProperty('hargaSaluran');
+    expect((await galat(panggil('/paket', 'POST', { nama: 'Duo', isi: [{ menuId: 'thaiTea', ukuran: 'Jumbo', qty: 1 }], hargaSaluran: { gofood: 30000 } }, 'owner'))).perField).toHaveProperty('isi[0].ukuran');
+    expect((await galat(panggil('/paket', 'POST', { nama: 'paket berdua', isi, hargaSaluran: { gofood: 30000 } }, 'owner'))).perField).toHaveProperty('nama');
+    expect((await galat(panggil('/paket', 'POST', { nama: 'Duo', isi, hargaSaluran: { gofood: 30000 } }))).status).toBe(403);
+    const baru = await panggil('/paket', 'POST', { nama: 'Duo Large', isi, hargaSaluran: { gofood: 30000 } }, 'owner');
+    expect(baru).toMatchObject({ kode: `paket:${baru.id}`, aktif: true, hargaIsiToko: 30000 });
+  });
+
+  it('ukuran menu yang dipakai paket tidak bisa dihapus; kode paket tidak bisa dipetakan; harga massal paket tidak boleh kosong', async () => {
+    const m = (await panggil('/menu', 'GET', undefined, 'owner')).find((x) => x.id === 'kopiSusu');
+    const tanpaRegular = m.ukuran.filter((u) => u.nama !== 'Regular').map(({ nama, harga, hargaSaluran, resep }) => ({ nama, harga, hargaSaluran, resep }));
+    expect((await galat(panggil('/menu/kopiSusu', 'PUT', { nama: m.nama, kategori: m.kategori, ukuran: tanpaRegular, toppingIds: m.toppingIds }, 'owner'))).message).toMatch(/Paket Berdua/);
+    expect((await galat(panggil('/saluran/gofood/pemetaan', 'PUT', { kode: 'paket:berdua', isi: [{ menuId: 'thaiTea', ukuran: 'Regular', qty: 1 }] }, 'owner'))).status).toBe(409);
+    expect((await galat(panggil('/harga-saluran', 'PUT', { menu: [], topping: [], paket: [{ id: 'berdua', hargaSaluran: {} }] }, 'owner'))).perField).toHaveProperty('paket[0].hargaSaluran');
+    const ok = await panggil('/harga-saluran', 'PUT', { menu: [], topping: [], paket: [{ id: 'berdua', hargaSaluran: { grabfood: 31000 } }] }, 'owner');
+    expect(ok.paket.find((p) => p.id === 'berdua').hargaSaluran).toEqual({ grabfood: 31000 });
+  });
+});
+
 describe('pesanan contoh', () => {
   it('total = jumlah item, kode sinkron menu kasir, nomor berawalan per aplikasi', () => {
     const k = buatKatalog();
@@ -280,6 +335,12 @@ describe.each(JENIS_USAHA)('data demo %s: pesanan online', (usaha) => {
     expect(menunggu).toHaveLength(2);
     expect(menunggu.some((p) => p.item.some((i) => i.kode === KODE_TIDAK_DIKENAL))).toBe(true);
     expect(st.transaksi.filter((t) => t.batal)).toHaveLength(1);
+  });
+  it('ada pesanan paket kasir, otomatis dan manual', () => {
+    const berPaket = st.transaksi.filter((t) => t.item.some((i) => i.paket));
+    expect(berPaket.some((t) => t.pesananId)).toBe(true);
+    expect(berPaket.some((t) => t.saluran === 'shopeefood')).toBe(true);
+    expect(berPaket.every((t) => t.saluran !== 'toko')).toBe(true);
   });
   it('nomor pesanan unik per saluran', () => {
     const kunci = st.transaksi.filter((t) => t.nomorPesanan).map((t) => `${t.saluran}|${t.nomorPesanan}`);

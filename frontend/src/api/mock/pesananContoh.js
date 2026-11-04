@@ -5,21 +5,21 @@
 //                                                            ▼
 //   { nomorPesanan, pelanggan, item: [{ kode, nama, qty, harga, topping }], total }  → POST /integrasi/<saluran>/pesanan
 
-import { hargaDi, kodeMenu, NAMA_SALURAN, SALURAN_ONLINE } from '../../../../logika/saluran.js';
+import { hargaDi, kodeMenu, kodePaket, NAMA_SALURAN, SALURAN_ONLINE } from '../../../../logika/saluran.js';
 
 export const AWALAN_NOMOR = { gofood: 'F-', grabfood: 'GF-', shopeefood: 'SF-' };
 const PELANGGAN = ['Andi', 'Bella', 'Citra', 'Dewi', 'Eka', 'Fajar', 'Gita', 'Hendra', 'Indah', 'Joko', 'Kiki', 'Lina', 'Maya', 'Nanda'];
 const CATATAN = ['Es sedikit', 'Less sugar', 'Tolong dipisah', 'Sedotan 2'];
 
-// Menu yang dibuat owner langsung di aplikasi, bukan disinkron dari kasir: kasir belum mengenalinya.
-export const KODE_TIDAK_DIKENAL = 'APP-PAKET-BERDUA';
+// Menu yang dibuat owner langsung di aplikasi, bukan dirancang di kasir: kasir belum mengenalinya.
+export const KODE_TIDAK_DIKENAL = 'APP-PROMO-GAJIAN';
 
 export function nomorPesanan(saluran, angka) {
   if (!AWALAN_NOMOR[saluran]) throw new TypeError(`Saluran online tidak dikenal: ${saluran}`);
   return `${AWALAN_NOMOR[saluran]}${String(angka).padStart(6, '0')}`;
 }
 
-export function buatPesananContoh({ menu, topping, saluran, nomor, acak = Math.random, tidakDikenal = false }) {
+export function buatPesananContoh({ menu, topping, paket = [], saluran, nomor, acak = Math.random, tidakDikenal = false, denganPaket = null }) {
   if (!SALURAN_ONLINE.includes(saluran)) throw new TypeError(`Saluran online tidak dikenal: ${saluran}`);
   if (!Array.isArray(menu) || menu.length === 0) throw new TypeError('Menu kosong');
   const pilih = (arr) => arr[Math.floor(acak() * arr.length)];
@@ -41,9 +41,15 @@ export function buatPesananContoh({ menu, topping, saluran, nomor, acak = Math.r
       topping: tp.map((t) => ({ kode: t.id, nama: t.nama })),
     });
   }
+  // Paket kasir yang dijual di aplikasi ini (dikirim ke aplikasi saat sinkron menu, jadi kodenya dikenali).
+  const paketDijual = paket.filter((p) => p.aktif && Number.isInteger(p.hargaSaluran?.[saluran]));
+  if (paketDijual.length && (denganPaket ?? acak() < 0.25)) {
+    const p = pilih(paketDijual);
+    item.push({ kode: kodePaket(p.id), nama: p.nama, qty: 1, harga: p.hargaSaluran[saluran], topping: [] });
+  }
   if (tidakDikenal) {
     const u = menu[0].ukuran[0];
-    item.push({ kode: KODE_TIDAK_DIKENAL, nama: 'Paket Berdua (dibuat di aplikasi)', qty: 1, harga: Math.ceil((hargaDi(u, saluran) * 2 * 0.9) / 500) * 500, topping: [] });
+    item.push({ kode: KODE_TIDAK_DIKENAL, nama: 'Promo Gajian (dibuat di aplikasi)', qty: 1, harga: Math.ceil((hargaDi(u, saluran) * 2 * 0.9) / 500) * 500, topping: [] });
   }
 
   const pesanan = {

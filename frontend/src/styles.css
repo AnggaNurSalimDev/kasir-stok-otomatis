@@ -216,3 +216,4 @@ details.kartu summary { cursor: pointer; font-weight: 600; }
 }
 .baris-isi-paket input, .baris-isi-paket select { width: 100%; min-width: 0; box-sizing: border-box; }
 .baris-isi-paket .isian { min-width: 0; }
+#paket { scroll-margin-top: 1rem; }

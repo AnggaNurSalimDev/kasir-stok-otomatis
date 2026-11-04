@@ -16,11 +16,13 @@ import { SALURAN_ONLINE, hargaImpas, hargaNaik } from '../../../../logika/salura
 const KELIPATAN = [100, 500, 1000];
 const teksHarga = (n) => (Number.isInteger(n) ? String(n) : '');
 
-function barisDari(menu, topping) {
+// Paket: kolom harga toko berisi harga isinya jika dibeli terpisah (pembanding), kolom kosong = tidak dijual di sana.
+function barisDari(menu, topping, paket = []) {
   const nilaiDari = (b) => Object.fromEntries(SALURAN_ONLINE.map((s) => [s, teksHarga(b.hargaSaluran?.[s])]));
   return [
     ...menu.flatMap((m) => m.ukuran.map((u) => ({ kunci: `m|${m.id}|${u.nama}`, jenis: 'menu', id: m.id, nama: m.nama, ukuran: u.nama, kategori: m.kategori, harga: u.harga, nilai: nilaiDari(u) }))),
     ...topping.map((t) => ({ kunci: `t|${t.id}`, jenis: 'topping', id: t.id, nama: t.nama, ukuran: null, kategori: 'Topping', harga: t.harga, nilai: nilaiDari(t) })),
+    ...paket.map((p) => ({ kunci: `p|${p.id}`, jenis: 'paket', id: p.id, nama: p.nama, ukuran: null, kategori: 'Paket promo (khusus aplikasi)', harga: p.hargaIsiToko, nilai: nilaiDari(p), aktif: p.aktif })),
   ];
 }
 
@@ -40,14 +42,19 @@ function keBody(baris) {
   };
   const menu = new Map();
   const topping = [];
+  const paket = [];
   baris.forEach((b, i) => {
-    if (b.jenis === 'menu') {
+    if (b.jenis === 'paket') {
+      const hs = hargaSaluran(b, i);
+      if (Object.keys(hs).length === 0 && !detail.some((d) => d.field.startsWith(`${i}.`))) detail.push({ field: `${i}.paket`, pesan: `${b.nama}: isi harga minimal di satu aplikasi (atau nonaktifkan paketnya di Menu & resep)` });
+      paket.push({ id: b.id, hargaSaluran: hs });
+    } else if (b.jenis === 'menu') {
       if (!menu.has(b.id)) menu.set(b.id, { id: b.id, ukuran: [] });
       menu.get(b.id).ukuran.push({ nama: b.ukuran, hargaSaluran: hargaSaluran(b, i) });
     } else topping.push({ id: b.id, hargaSaluran: hargaSaluran(b, i) });
   });
   if (detail.length) throw new GalatForm(detail);
-  return { menu: [...menu.values()], topping };
+  return { menu: [...menu.values()], topping, paket };
 }
 
 function Penjelasan({ contoh, komisi, namaSaluran }) {
@@ -70,6 +77,7 @@ export default function HargaAplikasi({ saluran }) {
   const { api } = useSesi();
   const menu = useData('/menu');
   const topping = useData('/topping');
+  const paket = useData('/paket');
   const [baris, setBaris] = useState(null);
   // Data hasil simpan terakhir. Dipakai langsung supaya tabel tidak sempat menampilkan harga lama selagi data dimuat ulang.
   const [tersimpan, setTersimpan] = useState(null);
@@ -78,21 +86,22 @@ export default function HargaAplikasi({ saluran }) {
   const kirim = useKirim();
 
   const awal = useMemo(() => {
-    if (tersimpan) return barisDari(tersimpan.menu, tersimpan.topping);
-    return menu.data && topping.data ? barisDari(menu.data, topping.data) : null;
-  }, [tersimpan, menu.data, topping.data]);
+    if (tersimpan) return barisDari(tersimpan.menu, tersimpan.topping, tersimpan.paket);
+    return menu.data && topping.data && paket.data ? barisDari(menu.data, topping.data, paket.data) : null;
+  }, [tersimpan, menu.data, topping.data, paket.data]);
   const isi = baris ?? awal;
 
-  if (!awal && (menu.memuat || topping.memuat)) return <Memuat />;
-  const galat = menu.galat ?? topping.galat;
-  if (galat) return <PesanGalat galat={galat} ulangi={() => { menu.muatUlang(); topping.muatUlang(); }} />;
+  if (!awal && (menu.memuat || topping.memuat || paket.memuat)) return <Memuat />;
+  const galat = menu.galat ?? topping.galat ?? paket.galat;
+  if (galat) return <PesanGalat galat={galat} ulangi={() => { menu.muatUlang(); topping.muatUlang(); paket.muatUlang(); }} />;
 
   const kolom = saluran.filter((s) => s.aktif);
   if (kolom.length === 0) return <Pesan>Belum ada aplikasi yang dipakai. Aktifkan dulu di tab Sambungan.</Pesan>;
 
   const komisiDi = (s) => kolom.find((k) => k.id === s)?.komisiPersen ?? 0;
   const ubahSel = (kunci, s, v) => setBaris(isi.map((b) => (b.kunci === kunci ? { ...b, nilai: { ...b.nilai, [s]: v } } : b)));
-  const isiKolom = (s, fn) => setBaris(isi.map((b) => ({ ...b, nilai: { ...b.nilai, [s]: fn(b) } })));
+  // Isi cepat hanya untuk menu & topping: harga paket promo sengaja diatur per paket.
+  const isiKolom = (s, fn) => setBaris(isi.map((b) => (b.jenis === 'paket' ? b : { ...b, nilai: { ...b.nilai, [s]: fn(b) } })));
   const berubah = isi.filter((b, i) => SALURAN_ONLINE.some((s) => b.nilai[s].trim() !== awal[i].nilai[s])).length;
 
   const simpan = async () => {
@@ -110,7 +119,7 @@ export default function HargaAplikasi({ saluran }) {
     <>
       <p className="bantuan">
         Harga yang dipakai saat crew mencatat pesanan aplikasi di kasir, dan harga yang dikirim ke aplikasi saat menu disinkron (di sambungan sungguhan).
-        Kolom kosong = sama dengan harga toko. Stok tetap memakai resep yang sama, apa pun salurannya.
+        Kolom kosong = sama dengan harga toko (untuk paket promo: tidak dijual di aplikasi itu). Stok tetap memakai resep yang sama, apa pun salurannya.
       </p>
       <Penjelasan contoh={contoh} komisi={komisiDi(kolom[0].id)} namaSaluran={kolom[0].nama} />
 
@@ -139,7 +148,7 @@ export default function HargaAplikasi({ saluran }) {
             <button type="button" className="tombol-kecil" onClick={() => isiKolom(s.id, () => '')}>Kosongkan (= harga toko)</button>
           </div>
         ))}
-        <p className="bantuan">Isi cepat hanya mengubah tabel di bawah. Belum tersimpan sampai menekan Simpan.</p>
+        <p className="bantuan">Isi cepat hanya mengubah tabel di bawah (menu & topping, bukan paket promo). Belum tersimpan sampai menekan Simpan.</p>
       </div>
 
       <RingkasanGalat galat={kirim.galat} />
@@ -157,18 +166,18 @@ export default function HargaAplikasi({ saluran }) {
               return [
                 judul && <tr key={`k-${b.kategori}`} className="baris-kategori"><td colSpan={2 + kolom.length}>{b.kategori}</td></tr>,
                 <tr key={b.kunci}>
-                  <td>{b.nama}{b.ukuran && <small> {b.ukuran}</small>}</td>
-                  <td className="kanan">{formatRupiah(b.harga)}</td>
+                  <td>{b.nama}{b.ukuran && <small> {b.ukuran}</small>}{b.jenis === 'paket' && !b.aktif && <small className="teks-redup"> (nonaktif)</small>}</td>
+                  <td className="kanan">{b.jenis === 'paket' ? <small className="teks-redup">isi di toko<br />{formatRupiah(b.harga)}</small> : formatRupiah(b.harga)}</td>
                   {kolom.map((s) => {
                     const teks = b.nilai[s.id];
                     const n = teks.trim() === '' ? null : angkaBulatDari(teks);
                     const salah = teks.trim() !== '' && (n === null || n < 0);
                     const bersih = n === null ? null : Math.round(n * (1 - s.komisiPersen / 100));
-                    const rugi = bersih !== null && !salah && bersih < b.harga;
+                    const rugi = b.jenis !== 'paket' && bersih !== null && !salah && bersih < b.harga;
                     return (
                       <td key={s.id}>
                         <input
-                          className="angka" inputMode="numeric" value={teks} placeholder={String(b.harga)}
+                          className="angka" inputMode="numeric" value={teks} placeholder={b.jenis === 'paket' ? 'tidak dijual' : String(b.harga)}
                           aria-label={`Harga ${s.nama} ${b.nama}${b.ukuran ? ` ${b.ukuran}` : ''}`} aria-invalid={salah || undefined}
                           onChange={(e) => ubahSel(b.kunci, s.id, e.target.value)}
                         />

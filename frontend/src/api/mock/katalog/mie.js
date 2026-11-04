@@ -62,6 +62,10 @@ export default {
     { id: 'tpPangsit', nama: 'Pangsit (3)', harga: 4000, resep: [r('pangsit', 3, 'lembar')] },
     { id: 'tpMie', nama: 'Extra Mie', harga: 5000, resep: [r('mie', 1, 'gulung')] },
   ],
+  // Paket promo khusus aplikasi (harga di aplikasi dibuat saat katalog disiapkan).
+  paket: [
+    { id: 'makanBerdua', nama: 'Paket Makan Berdua', isi: [{ menuId: 'mieAyam', ukuran: 'Biasa', qty: 2 }, { menuId: 'esTeh', ukuran: 'Gelas', qty: 2 }] },
+  ],
   fisikAwal: {
     mie: 8000, ayam: 64, kuah: 16000, sawi: 1600, telur: 72, bakso: 256, pangsit: 128, minyakBawang: 960, kecap: 960,
     daunBawang: 320, teh: 9600, gula: 16000, jeruk: 58,

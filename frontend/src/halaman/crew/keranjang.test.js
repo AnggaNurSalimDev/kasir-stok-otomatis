@@ -88,3 +88,18 @@ describe('harga per saluran', () => {
     expect(t([item], menuById, toppingById, 'shopeefood')).toBe(24000);
   });
 });
+
+describe('item paket', () => {
+  it('kunci, harga per aplikasi (null di toko / tidak dijual), dan body', async () => {
+    const k = await import('./keranjang.js');
+    const paketById = new Map([['duo', { id: 'duo', aktif: true, hargaSaluran: { gofood: 30000 } }]]);
+    const isi = k.tambah(k.tambah([], { paketId: 'duo', qty: 1 }), { paketId: 'duo', qty: 2 });
+    expect(isi).toEqual([{ paketId: 'duo', qty: 3 }]);
+    expect(k.hargaSatuan(isi[0], new Map(), new Map(), 'gofood', paketById)).toBe(30000);
+    expect(k.hargaSatuan(isi[0], new Map(), new Map(), 'toko', paketById)).toBeNull();
+    expect(k.hargaSatuan(isi[0], new Map(), new Map(), 'grabfood', paketById)).toBeNull();
+    expect(k.total(isi, new Map(), new Map(), 'gofood', paketById)).toBe(90000);
+    expect(k.keBody(isi)).toEqual([{ paketId: 'duo', qty: 3 }]);
+    expect(() => k.tambah([], { paketId: 1, qty: 1 })).toThrow();
+  });
+});

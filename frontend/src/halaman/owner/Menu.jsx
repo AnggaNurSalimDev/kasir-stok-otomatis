@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSesi } from '../../sesi/SesiContext.jsx';
 import { useData } from '../../komponen/useData.js';
 import { Memuat, Pesan, PesanGalat } from '../../komponen/umum.jsx';
 import { Isian, RingkasanGalat, useKirim, GalatForm } from '../../komponen/form.jsx';
 import { angkaBulatDari, formatRupiah } from '../../komponen/formAngka.js';
 import EditorResep, { barisKosong, resepKeBody, resepKeBaris } from '../../komponen/EditorResep.jsx';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
+import EditorIsiPaket, { isiKosong, isiKeBody, isiKeForm, kalimatIsi, hargaIsiToko } from '../../komponen/EditorIsiPaket.jsx';
 import { SALURAN_ONLINE, NAMA_SALURAN } from '../../../../logika/saluran.js';
 
 // ---------------------------------------------------------------------------
@@ -28,12 +29,12 @@ function hargaSaluranKeBody(form, awalanField, label) {
   return { hargaSaluran: hasil, detail };
 }
 
-function IsianHargaSaluran({ nilai, onChange, perField, awalanField, hargaToko }) {
+function IsianHargaSaluran({ nilai, onChange, perField, awalanField, hargaToko, placeholderKosong = 'sama dengan toko' }) {
   return (
     <div className="baris-isian">
       {SALURAN_ONLINE.map((x) => (
         <Isian key={x} label={`Harga ${NAMA_SALURAN[x]}`} galat={perField[`${awalanField}.${x}`]}>
-          {(p) => <input {...p} className="angka" inputMode="numeric" value={nilai[x]} placeholder={hargaToko ? `sama: ${hargaToko}` : 'sama dengan toko'} onChange={(e) => onChange({ ...nilai, [x]: e.target.value })} />}
+          {(p) => <input {...p} className="angka" inputMode="numeric" value={nilai[x]} placeholder={hargaToko ? `sama: ${hargaToko}` : placeholderKosong} onChange={(e) => onChange({ ...nilai, [x]: e.target.value })} />}
         </Isian>
       ))}
     </div>
@@ -214,6 +215,68 @@ function FormTopping({ awal, bahan, onSelesai, onBatal }) {
 }
 
 // ---------------------------------------------------------------------------
+// Paket promo (khusus aplikasi)
+// ---------------------------------------------------------------------------
+
+function FormPaket({ awal, menu, onSelesai, onBatal }) {
+  const { api } = useSesi();
+  const [f, setF] = useState(() =>
+    awal
+      ? { nama: awal.nama, isi: isiKeForm(awal.isi), hargaSaluran: hargaSaluranKeForm(awal.hargaSaluran), aktif: awal.aktif }
+      : { nama: '', isi: [isiKosong()], hargaSaluran: hargaSaluranKeForm(), aktif: true },
+  );
+  const kirim = useKirim();
+  const pf = kirim.perField;
+  const menuById = new Map(menu.map((m) => [m.id, m]));
+  const kalimat = kalimatIsi(f.isi, menuById);
+  const pembanding = hargaIsiToko(f.isi, menuById);
+
+  const simpan = async (e) => {
+    e.preventDefault();
+    const hasil = await kirim.jalankan(() => {
+      const isi = isiKeBody(f.isi);
+      const hs = hargaSaluranKeBody(f.hargaSaluran, 'hargaSaluran', f.nama || 'Paket');
+      const detail = [...isi.detail, ...hs.detail];
+      if (Object.keys(hs.hargaSaluran).length === 0 && hs.detail.length === 0) detail.push({ field: 'hargaSaluran', pesan: 'Isi harga minimal di satu aplikasi' });
+      if (detail.length) throw new GalatForm(detail);
+      return api(awal ? `/paket/${awal.id}` : '/paket', { method: awal ? 'PUT' : 'POST', body: { nama: f.nama, isi: isi.isi, hargaSaluran: hs.hargaSaluran, aktif: f.aktif } });
+    });
+    if (hasil) onSelesai(awal ? 'Paket disimpan' : 'Paket ditambahkan. Di sambungan sungguhan, paket ikut dikirim ke aplikasi saat menu disinkron.');
+  };
+
+  return (
+    <form className="kartu" onSubmit={simpan} noValidate>
+      <h2>{awal ? `Ubah paket: ${awal.nama}` : 'Paket baru'}</h2>
+      <RingkasanGalat galat={kirim.galat} />
+      <Isian label="Nama paket" bantuan="Nama yang tampil di aplikasi, misalnya Paket Berdua" galat={pf.nama}>
+        {(p) => <input {...p} value={f.nama} onChange={(e) => setF({ ...f, nama: e.target.value })} />}
+      </Isian>
+      <fieldset>
+        <legend>Isi 1 paket (menurut resep kasir)</legend>
+        <EditorIsiPaket baris={f.isi} onChange={(isi) => setF({ ...f, isi })} menu={menu} perField={pf} />
+        <p className="pratinjau-pemetaan" aria-live="polite">
+          {kalimat ? <>1× {f.nama || 'paket ini'} = <strong>{kalimat}</strong>{pembanding > 0 && <> · jika dibeli terpisah di toko {formatRupiah(pembanding)}</>}</> : <span className="teks-redup">Pilih menu untuk melihat isinya.</span>}
+        </p>
+      </fieldset>
+      <fieldset>
+        <legend>Harga di aplikasi</legend>
+        <p className="bantuan">Paket hanya dijual di aplikasi, tidak di kasir toko. <strong>Kosong = tidak dijual di aplikasi itu.</strong> Isi minimal satu.</p>
+        <IsianHargaSaluran nilai={f.hargaSaluran} onChange={(hargaSaluran) => setF({ ...f, hargaSaluran })} perField={pf} awalanField="hargaSaluran" placeholderKosong="tidak dijual" />
+        {pf.hargaSaluran && <small className="teks-galat">{pf.hargaSaluran}</small>}
+      </fieldset>
+      <label className="centang">
+        <input type="checkbox" checked={f.aktif} onChange={(e) => setF({ ...f, aktif: e.target.checked })} />
+        Aktif (dijual). Matikan saat promo selesai; riwayat penjualan tetap tersimpan.
+      </label>
+      <div className="aksi">
+        <button type="submit" className="tombol-utama" disabled={kirim.sedang}>{kirim.sedang ? 'Menyimpan…' : 'Simpan'}</button>
+        <button type="button" className="tombol-kecil" onClick={onBatal}>Batal</button>
+      </div>
+    </form>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Halaman
 // ---------------------------------------------------------------------------
 
@@ -224,12 +287,19 @@ export default function Menu() {
   const menu = useData('/menu');
   const topping = useData('/topping');
   const bahan = useData('/bahan');
-  const [edit, setEdit] = useState(null); // { jenis: 'menu' | 'topping', data: null | objek }
+  const paket = useData('/paket');
+  const lokasi = useLocation();
+  const [edit, setEdit] = useState(null); // { jenis: 'menu' | 'topping' | 'paket', data: null | objek }
   const [sukses, setSukses] = useState(null);
 
-  const memuat = menu.memuat || topping.memuat || bahan.memuat;
-  const galat = menu.galat ?? topping.galat ?? bahan.galat;
-  const ulangi = () => { menu.muatUlang(); topping.muatUlang(); bahan.muatUlang(); };
+  const memuat = menu.memuat || topping.memuat || bahan.memuat || paket.memuat;
+  const galat = menu.galat ?? topping.galat ?? bahan.galat ?? paket.galat;
+  const ulangi = () => { menu.muatUlang(); topping.muatUlang(); bahan.muatUlang(); paket.muatUlang(); };
+
+  // Tautan "Menu & resep → Paket" dari halaman lain: gulir ke bagian paket setelah data tampil.
+  useEffect(() => {
+    if (!memuat && lokasi.hash === '#paket') document.getElementById('paket')?.scrollIntoView();
+  }, [memuat, lokasi.hash]);
 
   if (memuat) return <Memuat />;
   if (galat) return <PesanGalat galat={galat} ulangi={ulangi} />;
@@ -250,6 +320,7 @@ export default function Menu() {
           <span className="aksi">
             <button type="button" className="tombol-utama" onClick={() => mulai('menu')}>+ Menu baru</button>
             <button type="button" className="tombol-kecil" onClick={() => mulai('topping')}>+ Topping baru</button>
+            <button type="button" className="tombol-kecil" onClick={() => mulai('paket')}>+ Paket promo (aplikasi)</button>
           </span>
         )}
       </div>
@@ -259,6 +330,7 @@ export default function Menu() {
         <FormMenu key={kunciForm} awal={edit.data} bahan={bahanAktif} topping={topping.data} kategori={kategori} onSelesai={selesai} onBatal={() => setEdit(null)} />
       )}
       {edit?.jenis === 'topping' && <FormTopping key={kunciForm} awal={edit.data} bahan={bahanAktif} onSelesai={selesai} onBatal={() => setEdit(null)} />}
+      {edit?.jenis === 'paket' && <FormPaket key={kunciForm} awal={edit.data} menu={menu.data} onSelesai={selesai} onBatal={() => setEdit(null)} />}
 
       {kategori.map((k) => (
         <div key={k}>
@@ -284,6 +356,29 @@ export default function Menu() {
           </div>
         </div>
       ))}
+
+      <h2 className="subjudul" id="paket">Paket promo (khusus aplikasi)</h2>
+      <p className="bantuan">
+        Paket dirancang di sini, bukan di aplikasi, supaya pesanannya langsung dikenali kasir dan stok setiap isinya berkurang sendiri.
+        Paket tidak muncul di kasir untuk pesanan di toko.
+      </p>
+      {paket.data.length === 0 && <p className="bantuan">Belum ada paket.</p>}
+      <div className="kisi-kartu">
+        {paket.data.map((p) => (
+          <article key={p.id} className="kartu kartu-menu">
+            <div className="judul-aksi">
+              <h3>{p.nama}</h3>
+              <button type="button" className="tombol-kecil" onClick={() => mulai('paket', p)}>Ubah</button>
+            </div>
+            {!p.aktif && <span className="lencana lencana-netral">Nonaktif</span>}
+            <p><small>{p.isi.map((k) => `${k.qty}× ${k.nama} ${k.ukuran}`).join(' + ')}</small></p>
+            <p>
+              {SALURAN_ONLINE.map((x) => (Number.isInteger(p.hargaSaluran[x]) ? `${NAMA_SALURAN[x]} ${formatRupiah(p.hargaSaluran[x])}` : null)).filter(Boolean).join(' · ')}
+              <br /><small className="teks-redup">Isi jika dibeli terpisah di toko: {formatRupiah(p.hargaIsiToko)}</small>
+            </p>
+          </article>
+        ))}
+      </div>
 
       <h2 className="subjudul">Topping</h2>
       <div className="kisi-kartu">

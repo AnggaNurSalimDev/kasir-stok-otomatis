@@ -8,6 +8,9 @@ import { RingkasanGalat, useKirim } from '../../komponen/form.jsx';
 import { angkaBulatDari, formatRupiah } from '../../komponen/formAngka.js';
 import { tambah, ubahQty, kunciItem, hargaSatuan, total, saranUang, keBody } from './keranjang.js';
 import { hargaDi, NAMA_SALURAN } from '../../../../logika/saluran.js';
+import { kelompokkanItem } from '../../komponen/kelompokItem.js';
+
+const TAB_PAKET = 'Paket';
 
 // ---------------------------------------------------------------------------
 // Panel pilih ukuran & topping
@@ -177,15 +180,23 @@ export function Struk({ struk, onBaru, teksTombol = 'Transaksi baru' }) {
         </p>
         <table>
           <tbody>
-            {struk.item.map((it, i) => (
+            {kelompokkanItem(struk.item).map((b, i) => (b.jenis === 'kelompok' ? (
               <tr key={i}>
                 <td>
-                  {it.qty}× {it.nama} {it.ukuran}
-                  {it.toppings.length > 0 && <><br /><small>+ {it.toppings.map((t) => t.nama).join(', ')}</small></>}
+                  {b.qty}× {b.nama}
+                  <br /><small>{b.isi.map((it) => `${it.qty}× ${it.nama} ${it.ukuran}`).join(', ')}</small>
                 </td>
-                <td className="kanan">{formatRupiah(it.subtotal)}</td>
+                <td className="kanan">{formatRupiah(b.subtotal)}</td>
               </tr>
-            ))}
+            ) : (
+              <tr key={i}>
+                <td>
+                  {b.item.qty}× {b.item.nama} {b.item.ukuran}
+                  {b.item.toppings.length > 0 && <><br /><small>+ {b.item.toppings.map((t) => t.nama).join(', ')}</small></>}
+                </td>
+                <td className="kanan">{formatRupiah(b.item.subtotal)}</td>
+              </tr>
+            )))}
             <tr className="garis-atas"><td><strong>Total</strong></td><td className="kanan"><strong>{formatRupiah(struk.total)}</strong></td></tr>
             {struk.metodeBayar === 'tunai' ? (
               <>
@@ -216,6 +227,7 @@ export default function Kasir() {
   const menu = useData('/menu');
   const topping = useData('/topping');
   const saluranData = useData('/saluran');
+  const paketData = useData('/paket');
   const [saluran, setSaluran] = useState('toko');
   const [kategori, setKategori] = useState(null);
   const [pilih, setPilih] = useState(null); // menu yang sedang dipilih ukuran/topping-nya
@@ -225,8 +237,8 @@ export default function Kasir() {
   const [lihatKeranjang, setLihatKeranjang] = useState(false); // HP: keranjang dibuka sebagai panel
   const kirim = useKirim();
 
-  const memuat = shift.memuat || menu.memuat || topping.memuat || saluranData.memuat;
-  const galat = shift.galat ?? menu.galat ?? topping.galat ?? saluranData.galat;
+  const memuat = shift.memuat || menu.memuat || topping.memuat || saluranData.memuat || paketData.memuat;
+  const galat = shift.galat ?? menu.galat ?? topping.galat ?? saluranData.galat ?? paketData.galat;
   if (memuat) return <Memuat />;
   if (galat) return <PesanGalat galat={galat} ulangi={() => { shift.muatUlang(); menu.muatUlang(); topping.muatUlang(); saluranData.muatUlang(); }} />;
   if (!shift.data) {
@@ -235,14 +247,17 @@ export default function Kasir() {
 
   const menuById = new Map(menu.data.map((m) => [m.id, m]));
   const toppingById = new Map(topping.data.map((t) => [t.id, t]));
-  const daftarKategori = [...new Set(menu.data.map((m) => m.kategori))];
-  const aktif = kategori ?? daftarKategori[0];
-  const totalTampil = total(keranjang, menuById, toppingById, saluran);
+  const paketById = new Map(paketData.data.map((p) => [p.id, p]));
+  // Paket promo hanya dijual di aplikasi: muncul sebagai tab "Paket" saat saluran aplikasi dipilih.
+  const paketDijual = saluran === 'toko' ? [] : paketData.data.filter((p) => p.aktif && Number.isInteger(p.hargaSaluran[saluran]));
+  const daftarKategori = [...(paketDijual.length ? [TAB_PAKET] : []), ...new Set(menu.data.map((m) => m.kategori))];
+  const aktif = daftarKategori.includes(kategori) ? kategori : daftarKategori[0];
+  const totalTampil = total(keranjang, menuById, toppingById, saluran, paketById);
   // Saluran yang dicatat di kasir: di toko + aplikasi aktif yang belum tersambung otomatis.
   const manual = saluranData.data.filter((s) => s.aktif && s.mode === 'manual');
   const otomatis = saluranData.data.filter((s) => s.aktif && s.mode === 'otomatis');
   const jumlahItem = keranjang.reduce((a, it) => a + it.qty, 0);
-  const adaItemRusak = keranjang.some((it) => hargaSatuan(it, menuById, toppingById, saluran) === null);
+  const adaItemRusak = keranjang.some((it) => hargaSatuan(it, menuById, toppingById, saluran, paketById) === null);
 
   const klikMenu = (m) => {
     // Satu ukuran tanpa topping: langsung masuk keranjang.
@@ -287,19 +302,30 @@ export default function Kasir() {
           <ul className="daftar-keranjang">
             {keranjang.map((it) => {
               const m = menuById.get(it.menuId);
-              const h = hargaSatuan(it, menuById, toppingById, saluran);
+              const pk = it.paketId ? paketById.get(it.paketId) : null;
+              const h = hargaSatuan(it, menuById, toppingById, saluran, paketById);
               const k = kunciItem(it);
               return (
                 <li key={k}>
                   <div>
-                    <strong>{m?.nama ?? it.menuId}</strong> {it.ukuran}
-                    {it.toppingIds.length > 0 && <><br /><small>+ {it.toppingIds.map((id) => toppingById.get(id)?.nama ?? id).join(', ')}</small></>}
-                    {h === null && <><br /><small className="teks-galat">Menu berubah, hapus item ini</small></>}
+                    {it.paketId ? (
+                      <>
+                        <strong>{pk?.nama ?? it.paketId}</strong>
+                        {pk && <><br /><small>{pk.isi.map((x) => `${x.qty}× ${x.nama} ${x.ukuran}`).join(' + ')}</small></>}
+                        {h === null && <><br /><small className="teks-galat">{saluran === 'toko' ? 'Paket hanya untuk pesanan aplikasi' : `Tidak dijual di ${NAMA_SALURAN[saluran]}`}, hapus item ini</small></>}
+                      </>
+                    ) : (
+                      <>
+                        <strong>{m?.nama ?? it.menuId}</strong> {it.ukuran}
+                        {it.toppingIds.length > 0 && <><br /><small>+ {it.toppingIds.map((id) => toppingById.get(id)?.nama ?? id).join(', ')}</small></>}
+                        {h === null && <><br /><small className="teks-galat">Menu berubah, hapus item ini</small></>}
+                      </>
+                    )}
                   </div>
                   <div className="baris-qty">
-                    <button type="button" className="tombol-qty" aria-label={`Kurangi ${m?.nama}`} onClick={() => setKeranjang(ubahQty(keranjang, k, it.qty - 1))}>−</button>
+                    <button type="button" className="tombol-qty" aria-label={`Kurangi ${pk?.nama ?? m?.nama}`} onClick={() => setKeranjang(ubahQty(keranjang, k, it.qty - 1))}>−</button>
                     <strong>{it.qty}</strong>
-                    <button type="button" className="tombol-qty" aria-label={`Tambah ${m?.nama}`} onClick={() => setKeranjang(ubahQty(keranjang, k, it.qty + 1))} disabled={it.qty >= 99}>+</button>
+                    <button type="button" className="tombol-qty" aria-label={`Tambah ${pk?.nama ?? m?.nama}`} onClick={() => setKeranjang(ubahQty(keranjang, k, it.qty + 1))} disabled={it.qty >= 99}>+</button>
                   </div>
                   <span className="kanan">{h === null ? '–' : formatRupiah(h * it.qty)}</span>
                 </li>
@@ -339,6 +365,13 @@ export default function Kasir() {
           ))}
         </div>
         <div className="kisi-menu">
+          {aktif === TAB_PAKET && paketDijual.map((p) => (
+            <button key={p.id} type="button" className="tombol-menu" onClick={() => setKeranjang(tambah(keranjang, { paketId: p.id, qty: 1 }))} disabled={tahap !== 'pesan'}>
+              <strong>{p.nama}</strong>
+              <small>{p.isi.map((x) => `${x.qty}× ${x.nama}`).join(' + ')}</small>
+              <small>{formatRupiah(p.hargaSaluran[saluran])}</small>
+            </button>
+          ))}
           {menu.data.filter((m) => m.kategori === aktif).map((m) => (
             <button key={m.id} type="button" className="tombol-menu" onClick={() => klikMenu(m)} disabled={tahap !== 'pesan'}>
               <strong>{m.nama}</strong>

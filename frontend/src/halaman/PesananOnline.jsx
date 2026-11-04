@@ -34,6 +34,7 @@ function PanelSimulasi({ saluran, onTerkirim }) {
   const { api } = useSesi();
   const menu = useData('/menu');
   const topping = useData('/topping');
+  const paket = useData('/paket');
   const [pilih, setPilih] = useState(saluran[0]?.id ?? null);
   const [terakhir, setTerakhir] = useState(null); // { saluran, body, hasil }
   const [otomatis, setOtomatis] = useState(false);
@@ -41,9 +42,10 @@ function PanelSimulasi({ saluran, onTerkirim }) {
 
   const tujuan = saluran.some((s) => s.id === pilih) ? pilih : saluran[0]?.id;
 
+  const contoh = (opsi = {}) => buatPesananContoh({ menu: menu.data, topping: topping.data, paket: paket.data ?? [], saluran: tujuan, nomor: Date.now() % 1000000, ...opsi });
   const kirimPesanan = async ({ body, ke = tujuan, diam = false } = {}) => {
     if (!menu.data || !topping.data || !ke) return;
-    const isi = body ?? buatPesananContoh({ menu: menu.data, topping: topping.data, saluran: ke, nomor: Date.now() % 1000000 });
+    const isi = body ?? buatPesananContoh({ menu: menu.data, topping: topping.data, paket: paket.data ?? [], saluran: ke, nomor: Date.now() % 1000000 });
     const jalankan = () => api(`/integrasi/${ke}/pesanan`, { method: 'POST', body: isi });
     const hasil = diam ? await jalankan().catch(() => null) : await kirim.jalankan(jalankan);
     if (hasil) {
@@ -64,7 +66,8 @@ function PanelSimulasi({ saluran, onTerkirim }) {
   if (saluran.length === 0) {
     return <Pesan>Belum ada aplikasi yang tersambung. Owner bisa menyambungkannya (simulasi) di halaman Aplikasi online.</Pesan>;
   }
-  const siap = Boolean(menu.data && topping.data);
+  const siap = Boolean(menu.data && topping.data && paket.data);
+  const adaPaket = siap && paket.data.some((p) => p.aktif && Number.isInteger(p.hargaSaluran[tujuan]));
 
   return (
     <details className="kartu simulasi" open>
@@ -81,10 +84,11 @@ function PanelSimulasi({ saluran, onTerkirim }) {
       </div>
       <div className="aksi">
         <button type="button" className="tombol-utama" disabled={!siap || kirim.sedang} onClick={() => kirimPesanan()}>Kirim pesanan contoh</button>
-        <button
-          type="button" className="tombol-kecil" disabled={!siap || kirim.sedang}
-          onClick={() => kirimPesanan({ body: buatPesananContoh({ menu: menu.data, topping: topping.data, saluran: tujuan, nomor: Date.now() % 1000000, tidakDikenal: true }) })}
-        >
+        <button type="button" className="tombol-kecil" disabled={!adaPaket || kirim.sedang} onClick={() => kirimPesanan({ body: contoh({ denganPaket: true }) })}
+          title={adaPaket ? undefined : 'Belum ada paket kasir yang dijual di aplikasi ini'}>
+          Pesanan berisi paket kasir
+        </button>
+        <button type="button" className="tombol-kecil" disabled={!siap || kirim.sedang} onClick={() => kirimPesanan({ body: contoh({ denganPaket: false, tidakDikenal: true }) })}>
           Pesanan dengan menu yang dibuat di aplikasi
         </button>
         {terakhir && (
@@ -148,7 +152,7 @@ function KartuPesanan({ p, adaShift, peran, onSelesai }) {
               <br />
               {it.masalah
                 ? <small className="teks-galat">⚠ {it.masalah}{peran === 'owner' ? <> · <Link to="/owner/aplikasi/pemetaan">kenalkan ke kasir (pemetaan)</Link></> : ' · minta owner memetakannya di Aplikasi online → Pemetaan menu'}</small>
-                : <small className="teks-redup">→ resep kasir: {it.isiKasir.map((k) => `${k.qty > 1 || it.isiKasir.length > 1 ? `${k.qty}× ` : ''}${k.nama} ${k.ukuran}`).join(' + ')}{it.paket && ' (pemetaan)'}</small>}
+                : <small className="teks-redup">→ resep kasir: {it.isiKasir.map((k) => `${k.qty > 1 || it.isiKasir.length > 1 ? `${k.qty}× ` : ''}${k.nama} ${k.ukuran}`).join(' + ')}{it.sumber === 'paket' ? ' (paket kasir)' : it.sumber === 'pemetaan' ? ' (pemetaan)' : ''}</small>}
             </span>
             <span className="kanan">{formatRupiah(it.harga * it.qty)}</span>
           </li>

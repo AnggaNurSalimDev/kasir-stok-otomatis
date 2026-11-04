@@ -29,17 +29,29 @@ export function perkiraanKomisi(total, persen) {
 // Kode item yang dikirim aplikasi. Menu yang disinkronkan dari kasir memakai kode "menuId:ukuran";
 // menu yang dibuat langsung di aplikasi punya kode lain dan perlu dipetakan owner.
 export const kodeMenu = (menuId, ukuran) => `${menuId}:${ukuran}`;
+// Paket dirancang di kasir dan dikirim ke aplikasi dengan kode "paket:<id>", jadi pesanannya langsung dikenali.
+export const AWALAN_PAKET = 'paket:';
+export const kodePaket = (paketId) => `${AWALAN_PAKET}${paketId}`;
 
 // Mencocokkan satu item aplikasi ke menu kasir.
 //   menu disinkron dari kasir ("thaiTea:Large")      → isi = [{ thaiTea, Large, qty 1 }]
+//   paket dirancang di kasir ("paket:berdua")          → isi = isi paket
 //   menu dibuat di aplikasi, sudah dipetakan owner   → isi = pemetaan, misalnya
-//        "Paket Berdua" = [{ thaiTea, Regular, 1 }, { kopiSusu, Regular, 1 }]
-//   → { isi: [{ menuId, ukuran, qty, toppingIds }] }   (qty per 1 item aplikasi)
+//        "Promo Gajian" = [{ thaiTea, Regular, 1 }, { kopiSusu, Regular, 1 }]
+//   → { isi: [{ menuId, ukuran, qty, toppingIds }], paketId? }   (qty per 1 item aplikasi)
 //   atau { masalah: '...' }  (jangan pernah menebak: stok akan berkurang dengan resep yang salah)
-export function cocokkanItem(item, { menuById, toppingById, pemetaan = {} }) {
+export function cocokkanItem(item, { menuById, toppingById, pemetaan = {}, paketById = new Map() }) {
   let isi = null;
+  let paketId;
   const peta = pemetaan[item.kode];
-  if (peta) isi = normalkanPemetaan(peta);
+  if (item.kode.startsWith(AWALAN_PAKET)) {
+    const paket = paketById.get(item.kode.slice(AWALAN_PAKET.length));
+    if (!paket) return { masalah: 'Paket ini tidak ada di kasir' };
+    if (!paket.aktif) return { masalah: 'Paket ini sudah dinonaktifkan di kasir' };
+    if ((item.topping ?? []).length) return { masalah: 'Paket tidak bisa diberi topping' };
+    isi = paket.isi;
+    paketId = paket.id;
+  } else if (peta) isi = normalkanPemetaan(peta);
   else {
     const i = item.kode.lastIndexOf(':');
     if (i > 0) {
@@ -60,7 +72,9 @@ export function cocokkanItem(item, { menuById, toppingById, pemetaan = {} }) {
     if (!toppingById.has(t.kode) || !pertama.toppingIds.includes(t.kode)) return { masalah: `Topping "${t.nama}" belum dikenali kasir` };
     toppingIds.push(t.kode);
   }
-  return { isi: isi.map((k, j) => ({ menuId: k.menuId, ukuran: k.ukuran, qty: k.qty, toppingIds: j === 0 ? toppingIds : [] })) };
+  const hasil = { isi: isi.map((k, j) => ({ menuId: k.menuId, ukuran: k.ukuran, qty: k.qty, toppingIds: j === 0 ? toppingIds : [] })) };
+  if (paketId) hasil.paketId = paketId;
+  return hasil;
 }
 
 // Pemetaan lama { menuId, ukuran, kali } → bentuk baru { isi: [...] }.
