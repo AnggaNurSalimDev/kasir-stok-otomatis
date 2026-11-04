@@ -71,10 +71,18 @@ CREATE TABLE pesanan_masuk (
   UNIQUE (outlet_id, saluran, nomor_pesanan)
 );
 
+-- Menu yang dibuat langsung di aplikasi (paket) → isi menurut resep kasir, misalnya
+-- "Paket Berdua" = 1 Thai Tea Regular + 1 Kopi Susu Regular. Harga paket dibagi sebanding harga kasir
+-- (logika/saluran.js: bagiHarga), supaya total transaksi = yang dibayar pelanggan.
 CREATE TABLE pemetaan_menu (
   outlet_id uuid, saluran text, kode text,
-  menu_id uuid NOT NULL, ukuran text NOT NULL, kali int NOT NULL CHECK (kali BETWEEN 1 AND 10),
   PRIMARY KEY (outlet_id, saluran, kode)
+);
+CREATE TABLE pemetaan_menu_isi (
+  outlet_id uuid, saluran text, kode text,
+  menu_id uuid NOT NULL, ukuran text NOT NULL, qty int NOT NULL CHECK (qty BETWEEN 1 AND 10),
+  PRIMARY KEY (outlet_id, saluran, kode, menu_id, ukuran),
+  FOREIGN KEY (outlet_id, saluran, kode) REFERENCES pemetaan_menu ON DELETE CASCADE
 );
 
 ALTER TABLE transaksi
@@ -98,7 +106,9 @@ Terima pesanan = satu transaksi DB: `SELECT … FOR UPDATE` pada `pesanan_masuk`
 | `POST /pesanan-online/:id/terima` | crew, owner | + panggil API platform: terima / siap |
 | `POST /pesanan-online/:id/tolak` | crew, owner | + panggil API platform: tolak |
 | `GET/PUT /saluran/:id` | owner | sama dengan mock |
-| `PUT /saluran/:id/pemetaan` | owner | sama dengan mock |
+| `PUT /saluran/:id/pemetaan` | owner | sama dengan mock: `{ kode, isi: [{ menuId, ukuran, qty }] }` (1–6 menu) |
+| `DELETE /saluran/:id/pemetaan/:kode` | owner | isi paket berubah → hapus, petakan ulang saat dipesan lagi |
+| `PUT /harga-saluran` | owner | harga aplikasi semua menu & topping sekaligus, satu transaksi DB |
 | `POST /saluran/:id/sinkron-menu` | owner | dorong menu + harga saluran kasir ke platform (kode = `menuId:ukuran`) |
 | `POST /transaksi/:id/batal` | crew (shift berjalan), owner | pesanan aplikasi manual |
 

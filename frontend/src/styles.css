@@ -188,3 +188,31 @@ details.kartu summary { cursor: pointer; font-weight: 600; }
 .harga-saluran { margin: 0.25rem 0 0.75rem; }
 .harga-saluran summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
 .lencana-netral { background: var(--panel); color: var(--redup); border: 1px solid var(--garis); }
+
+/* ---------- tab bagian, filter laporan, tabel harga, pemetaan ---------- */
+.tab-sub { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--garis); margin: 0 0 1rem; overflow-x: auto; }
+.tab-sub a { padding: 0.5rem 0.9rem; color: var(--teks); text-decoration: none; border-bottom: 3px solid transparent; white-space: nowrap; display: flex; gap: 0.4rem; align-items: center; }
+.tab-sub a.active { border-bottom-color: var(--tautan); font-weight: 700; }
+.penjelasan summary { cursor: pointer; }
+.penjelasan p, .penjelasan ul { margin: 0.5rem 0; }
+.baris-isi-paket { display: grid; grid-template-columns: 5rem minmax(10rem, 2fr) minmax(7rem, 1fr) auto; gap: 0.5rem; align-items: end; }
+.baris-isi-paket > button { margin-bottom: 0.75rem; }
+.pratinjau-pemetaan { padding: 0.6rem 0.75rem; background: var(--panel); border-radius: var(--radius-kecil); margin: 0.75rem 0; }
+.baris-filter { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: flex-end; margin-bottom: 0.5rem; }
+.isian-filter { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.85rem; font-weight: 600; min-width: 0; }
+.isian-filter select, .isian-filter input { font-weight: 400; }
+.isian-cari { flex: 1 1 14rem; }
+.filter-rentang .aksi label { display: flex; gap: 0.4rem; align-items: center; }
+.tabel-harga input.angka { width: 7.5rem; }
+.tabel-harga td small { display: block; }
+.baris-kategori td { background: var(--panel); font-weight: 700; font-size: 0.85rem; }
+.baris-isi-cepat { padding: 0.35rem 0; border-top: 1px solid var(--garis); }
+.baris-isi-cepat > strong { min-width: 6.5rem; }
+.input-persen { width: 4rem; margin: 0 0.25rem; }
+.bilah-simpan { position: sticky; bottom: 0; background: var(--halaman); padding: 0.75rem 0; border-top: 1px solid var(--garis); margin-top: 0.75rem; }
+@media (max-width: 640px) {
+  .baris-isi-paket { grid-template-columns: 4.5rem 1fr; }
+  .baris-isi-paket > :nth-child(3) { grid-column: 1 / -1; }
+}
+.baris-isi-paket input, .baris-isi-paket select { width: 100%; min-width: 0; box-sizing: border-box; }
+.baris-isi-paket .isian { min-width: 0; }

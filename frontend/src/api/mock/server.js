@@ -20,7 +20,7 @@ import {
   jumlahkanPemakaian, hitungSelisihShift, selisihSerahTerima,
   buatPenyesuaian, hitungKas, saranToleransi,
 } from '../../../../logika/shift.js';
-import { SALURAN_ONLINE, NAMA_SALURAN, adalahOnline, hargaDi, perkiraanKomisi, cocokkanItem } from '../../../../logika/saluran.js';
+import { SALURAN_ONLINE, NAMA_SALURAN, adalahOnline, hargaDi, perkiraanKomisi, cocokkanItem, normalkanPemetaan, bagiHarga } from '../../../../logika/saluran.js';
 
 const H = dariX10;
 const galat = (status, kode, pesan, detail) => new ErrorApi(status, kode, pesan, detail);
@@ -83,14 +83,16 @@ function cocokkanPesanan(st, p) {
 function tampilPesanan(st, p) {
   const baris = cocokkanPesanan(st, p);
   const item = baris.map(({ it, cocok }) => {
-    if (cocok.masalah) return { kode: it.kode, nama: it.nama, qty: it.qty, harga: it.harga, topping: it.topping, masalah: cocok.masalah, menuKasir: null };
-    const menu = st.menu.find((m) => m.id === cocok.menuId);
-    const ukuran = menu.ukuran.find((u) => u.nama === cocok.ukuran);
-    const hargaKasir = (hargaDi(ukuran, p.saluran) + cocok.toppingIds.reduce((a, tid) => a + hargaDi(st.topping.find((t) => t.id === tid), p.saluran), 0)) * cocok.kali;
+    if (cocok.masalah) return { kode: it.kode, nama: it.nama, qty: it.qty, harga: it.harga, topping: it.topping, masalah: cocok.masalah, isiKasir: null };
+    const isiKasir = cocok.isi.map((k) => {
+      const menu = st.menu.find((m) => m.id === k.menuId);
+      return { menuId: menu.id, nama: menu.nama, ukuran: k.ukuran, qty: k.qty };
+    });
+    const paket = Boolean(st.pemetaan[p.saluran]?.[it.kode]);
     return {
-      kode: it.kode, nama: it.nama, qty: it.qty, harga: it.harga, topping: it.topping, masalah: null,
-      menuKasir: { menuId: menu.id, nama: menu.nama, ukuran: ukuran.nama, kali: cocok.kali },
-      hargaBerbeda: hargaKasir !== it.harga,
+      kode: it.kode, nama: it.nama, qty: it.qty, harga: it.harga, topping: it.topping, masalah: null, isiKasir, paket,
+      // Harga paket memang tidak punya pembanding di kasir; yang dibandingkan hanya menu hasil sinkron.
+      hargaBerbeda: !paket && hargaKasirIsi(st, cocok.isi, p.saluran)[0] !== it.harga,
     };
   });
   const trx = p.transaksiId ? st.transaksi.find((t) => t.id === p.transaksiId) : null;
@@ -101,6 +103,14 @@ function tampilPesanan(st, p) {
     diprosesOleh: namaPengguna(st, p.diprosesOleh), diprosesPada: p.diprosesPada, alasan: p.alasan ?? null,
     transaksiId: p.transaksiId ?? null, batal: trx?.batal ? { pada: trx.batal.pada, alasan: trx.batal.alasan, sumber: trx.batal.sumber } : null,
   };
+}
+
+// Harga kasir (di saluran itu) untuk setiap isi: [harga isi 1 × qty, ...]
+function hargaKasirIsi(st, isi, saluran) {
+  return isi.map((k) => {
+    const ukuran = st.menu.find((m) => m.id === k.menuId).ukuran.find((u) => u.nama === k.ukuran);
+    return (hargaDi(ukuran, saluran) + k.toppingIds.reduce((a, tid) => a + hargaDi(st.topping.find((t) => t.id === tid), saluran), 0)) * k.qty;
+  });
 }
 
 // { toko: { jumlah, total }, gofood: {...}, ... } — transaksi batal tidak dihitung.
@@ -714,8 +724,23 @@ function tampilSaluran(st, s, peran) {
   for (const p of st.pesananMasuk.filter((x) => x.saluran === s && x.status === 'menunggu')) {
     for (const { it, cocok } of cocokkanPesanan(st, p)) if (cocok.masalah && !belum.has(it.kode)) belum.set(it.kode, { kode: it.kode, nama: it.nama, masalah: cocok.masalah });
   }
-  const pemetaan = Object.entries(st.pemetaan[s] ?? {}).map(([kode, t]) => ({ kode, ...t, namaMenu: st.menu.find((m) => m.id === t.menuId)?.nama ?? t.menuId }));
+  const pemetaan = Object.entries(st.pemetaan[s] ?? {}).map(([kode, t]) => ({
+    kode,
+    nama: namaAplikasiTerakhir(st, s, kode),
+    isi: normalkanPemetaan(t).map((k) => ({ ...k, nama: st.menu.find((m) => m.id === k.menuId)?.nama ?? k.menuId })),
+  }));
   return { ...dasar, komisiPersen: setel.komisiPersen, belumDikenali: [...belum.values()], pemetaan };
+}
+
+// Nama yang dipakai aplikasi untuk kode ini (dari pesanan terakhir yang memuatnya).
+function namaAplikasiTerakhir(st, saluran, kode) {
+  for (let i = st.pesananMasuk.length - 1; i >= 0; i--) {
+    const p = st.pesananMasuk[i];
+    if (p.saluran !== saluran) continue;
+    const it = p.item.find((x) => x.kode === kode);
+    if (it) return it.nama;
+  }
+  return kode;
 }
 
 daftar('GET', '/saluran', SEMUA, null, ({ st, pengguna }) => SALURAN_ONLINE.map((s) => tampilSaluran(st, s, pengguna.peran)));
@@ -738,11 +763,49 @@ daftar('PUT', '/saluran/:id', OWNER, S.SaluranBody, ({ st, params, body, pada })
 
 daftar('PUT', '/saluran/:id/pemetaan', OWNER, S.PemetaanBody, ({ st, params, body }) => {
   const s = wajibSaluran(params.id);
-  const menu = st.menu.find((m) => m.id === body.menuId);
-  if (!menu) throw validasi('Pemetaan tidak valid', [{ field: 'menuId', pesan: 'Menu tidak ditemukan' }]);
-  if (!menu.ukuran.some((u) => u.nama === body.ukuran)) throw validasi('Pemetaan tidak valid', [{ field: 'ukuran', pesan: `Ukuran "${body.ukuran}" tidak ada di ${menu.nama}` }]);
-  st.pemetaan[s] = { ...st.pemetaan[s], [body.kode]: { menuId: menu.id, ukuran: body.ukuran, kali: body.kali } };
+  const detail = [];
+  body.isi.forEach((k, i) => {
+    const menu = st.menu.find((m) => m.id === k.menuId);
+    if (!menu) detail.push({ field: `isi[${i}].menuId`, pesan: 'Menu tidak ditemukan' });
+    else if (!menu.ukuran.some((u) => u.nama === k.ukuran)) detail.push({ field: `isi[${i}].ukuran`, pesan: `Ukuran "${k.ukuran}" tidak ada di ${menu.nama}` });
+  });
+  if (detail.length) throw validasi('Pemetaan tidak valid', detail);
+  // Kode hasil sinkron menu kasir sudah dikenali; memetakannya ulang hanya membuat bingung.
+  const i = body.kode.lastIndexOf(':');
+  if (i > 0 && st.menu.find((m) => m.id === body.kode.slice(0, i))?.ukuran.some((u) => u.nama === body.kode.slice(i + 1))) {
+    throw konflik('Menu ini sudah dikenali kasir (disinkron dari menu kasir). Tidak perlu dipetakan.');
+  }
+  st.pemetaan[s] = { ...st.pemetaan[s], [body.kode]: { isi: body.isi } };
   return tampilSaluran(st, s, 'owner');
+});
+
+daftar('DELETE', '/saluran/:id/pemetaan/:kode', OWNER, null, ({ st, params }) => {
+  const s = wajibSaluran(params.id);
+  if (!st.pemetaan[s]?.[params.kode]) throw tidakAda('Pemetaan');
+  const { [params.kode]: _, ...sisa } = st.pemetaan[s];
+  st.pemetaan[s] = sisa;
+  return tampilSaluran(st, s, 'owner');
+});
+
+// Harga aplikasi untuk semua menu sekaligus. Atomik: satu menu/ukuran salah → tidak ada yang tersimpan.
+daftar('PUT', '/harga-saluran', OWNER, S.HargaSaluranMassalBody, ({ st, body }) => {
+  const detail = [];
+  body.menu.forEach((m, i) => {
+    const menu = st.menu.find((x) => x.id === m.id);
+    if (!menu) return detail.push({ field: `menu[${i}].id`, pesan: `Menu "${m.id}" tidak ditemukan` });
+    m.ukuran.forEach((u, j) => {
+      const uk = menu.ukuran.find((x) => x.nama === u.nama);
+      if (!uk) detail.push({ field: `menu[${i}].ukuran[${j}].nama`, pesan: `Ukuran "${u.nama}" tidak ada di ${menu.nama}` });
+      else uk.hargaSaluran = u.hargaSaluran;
+    });
+  });
+  body.topping.forEach((t, i) => {
+    const tp = st.topping.find((x) => x.id === t.id);
+    if (!tp) detail.push({ field: `topping[${i}].id`, pesan: `Topping "${t.id}" tidak ditemukan` });
+    else tp.hargaSaluran = t.hargaSaluran;
+  });
+  if (detail.length) throw validasi('Harga tidak tersimpan', detail); // salinan kerja dibuang: tidak ada yang berubah
+  return { menu: st.menu, topping: st.topping };
 });
 
 // Pintu masuk pesanan dari aplikasi (webhook). Di mock dipanggil tombol "kirim pesanan contoh" dan pembuat data demo.
@@ -794,10 +857,21 @@ daftar('POST', '/pesanan-online/:id/terima', SEMUA, null, (ctx) => {
   const salah = baris.filter((b) => b.cocok.masalah);
   // A-21: menu yang tidak dikenali tidak boleh diterima, supaya stok tidak berkurang dengan resep yang salah.
   if (salah.length) throw konflik(`Ada menu yang belum dikenali kasir: ${salah.map((b) => b.it.nama).join(', ')}. Minta owner memetakannya.`);
+  // Satu item aplikasi bisa berisi beberapa menu kasir (paket). Harganya dibagi sebanding harga kasir,
+  // supaya total transaksi tetap sama persis dengan yang dibayar pelanggan.
+  const item = [];
+  const hargaItem = [];
+  const namaAplikasi = [];
+  for (const { it, cocok } of baris) {
+    const bagian = bagiHarga(it.harga * it.qty, hargaKasirIsi(st, cocok.isi, p.saluran));
+    cocok.isi.forEach((k, j) => {
+      item.push({ menuId: k.menuId, ukuran: k.ukuran, toppingIds: k.toppingIds, qty: k.qty * it.qty });
+      hargaItem.push(bagian[j]);
+      namaAplikasi.push(it.nama);
+    });
+  }
   const { trx, peringatanMinus } = catatTransaksi(ctx, {
-    item: baris.map(({ it, cocok }) => ({ menuId: cocok.menuId, ukuran: cocok.ukuran, toppingIds: cocok.toppingIds, qty: it.qty * cocok.kali })),
-    hargaItem: baris.map(({ it }) => it.harga * it.qty),
-    namaAplikasi: baris.map(({ it }) => it.nama),
+    item, hargaItem, namaAplikasi,
     saluran: p.saluran, nomorPesanan: p.nomorPesanan, metodeBayar: 'aplikasi', pesananId: p.id,
   });
   Object.assign(p, { status: 'diterima', diprosesOleh: ctx.pengguna.id, diprosesPada: ctx.pada, transaksiId: trx.id });
@@ -891,20 +965,35 @@ daftar('POST', '/opname', SEMUA, S.OpnameBody, (ctx) => {
 });
 
 // ---------- laporan ----------
+// Rentang tanggal: ?dari=YYYY-MM-DD&sampai=YYYY-MM-DD (atau ?tanggal= untuk satu hari). Maksimal 31 hari.
+const MAKS_HARI_LAPORAN = 31;
 daftar('GET', '/laporan/harian', SEMUA, null, ({ st, query, pengguna, pada }) => {
   const zona = st.pengaturan.zonaWaktu;
   const hariIni = tanggalLokal(pada, zona);
-  const tanggal = query.tanggal ?? hariIni;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(tanggal)) throw validasi('Tanggal tidak valid', [{ field: 'tanggal', pesan: 'Format YYYY-MM-DD' }]);
-  if (pengguna.peran !== 'owner' && tanggal !== hariIni) throw galat(403, 'DILARANG', 'Crew hanya bisa melihat laporan hari ini');
+  const dari = query.dari ?? query.tanggal ?? hariIni;
+  const sampai = query.sampai ?? dari;
+  const formatSalah = [['dari', dari], ['sampai', sampai]].filter(([, v]) => !/^\d{4}-\d{2}-\d{2}$/.test(v) || Number.isNaN(Date.parse(`${v}T00:00:00Z`)));
+  if (formatSalah.length) throw validasi('Tanggal tidak valid', formatSalah.map(([f]) => ({ field: f, pesan: 'Format YYYY-MM-DD' })));
+  if (dari > sampai) throw validasi('Rentang tidak valid', [{ field: 'sampai', pesan: 'Tanggal akhir sebelum tanggal awal' }]);
+  const lamaHari = (Date.parse(`${sampai}T00:00:00Z`) - Date.parse(`${dari}T00:00:00Z`)) / 86400000 + 1;
+  if (lamaHari > MAKS_HARI_LAPORAN) throw validasi('Rentang terlalu panjang', [{ field: 'sampai', pesan: `Maksimal ${MAKS_HARI_LAPORAN} hari` }]);
+  if (pengguna.peran !== 'owner' && (dari !== hariIni || sampai !== hariIni)) throw galat(403, 'DILARANG', 'Crew hanya bisa melihat laporan hari ini');
+  const tanggal = dari;
 
-  const trx = st.transaksi.filter((t) => tanggalLokal(t.pada, zona) === tanggal);
+  const namaShift = new Map(st.shift.map((s) => [s.id, s.nama]));
+  const trx = st.transaksi.filter((t) => {
+    const tg = tanggalLokal(t.pada, zona);
+    return tg >= dari && tg <= sampai;
+  });
   const sah = transaksiSah(trx);
   const pakai = jumlahkanPemakaian(trx); // termasuk pesanan batal: bahannya tetap terpakai
   const ps = perSaluran(st, trx);
   const komisi = SALURAN_ONLINE.reduce((a, s) => a + ps[s].perkiraanKomisi, 0);
   return {
     tanggal,
+    dari,
+    sampai,
+    jumlahHari: lamaHari,
     jumlahTransaksi: sah.length,
     totalPenjualan: jumlahUang(sah),
     perMetode: {
@@ -923,6 +1012,7 @@ daftar('GET', '/laporan/harian', SEMUA, null, ({ st, query, pengguna, pada }) =>
       id: t.id, pada: t.pada, total: t.total, metodeBayar: t.metodeBayar, kasir: namaPengguna(st, t.oleh), item: t.item,
       saluran: t.saluran ?? 'toko', namaSaluran: NAMA_SALURAN[t.saluran ?? 'toko'], nomorPesanan: t.nomorPesanan ?? null,
       otomatis: Boolean(t.pesananId), batal: t.batal ? { alasan: t.batal.alasan, sumber: t.batal.sumber } : null,
+      shift: namaShift.get(t.shiftId) ?? null, tanggal: tanggalLokal(t.pada, zona),
     })),
   };
 });

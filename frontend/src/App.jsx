@@ -58,7 +58,9 @@ export default function App() {
         <Route path="pengaturan" element={<Pengaturan />} />
         <Route path="shift/:id" element={<DetailShift />} />
         <Route path="laporan" element={<Laporan />} />
-        <Route path="aplikasi" element={<Aplikasi />} />
+        <Route path="aplikasi" element={<Aplikasi tab="sambungan" />} />
+        <Route path="aplikasi/harga" element={<Aplikasi tab="harga" />} />
+        <Route path="aplikasi/pemetaan" element={<Aplikasi tab="pemetaan" />} />
         <Route path="pesanan-online" element={<PesananOnline />} />
       </Route>
 

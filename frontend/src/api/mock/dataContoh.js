@@ -15,14 +15,16 @@ import { buatMockApi } from './server.js';
 import { penyimpananObjek } from './penyimpanan.js';
 import { KATALOG } from './katalog/index.js';
 import { buatPesananContoh, nomorPesanan } from './pesananContoh.js';
+import { hargaImpas } from '../../../../logika/saluran.js';
 
 const MODAL_LACI = 200000;
 // Satuan yang dihitung pas (tidak ada takaran yang meleset).
 const SATUAN_HITUNGAN = new Set(['pcs', 'keping', 'butir', 'lembar', 'buah']);
 
-// Harga di aplikasi contoh: naik ±15–20% untuk menutup komisi, dibulatkan ke atas Rp 500.
-const KENAIKAN = { gofood: 1.2, grabfood: 1.2, shopeefood: 1.15 };
-const hargaSaluran = (harga) => Object.fromEntries(Object.entries(KENAIKAN).map(([s, f]) => [s, Math.ceil((harga * f) / 500) * 500]));
+// Harga di aplikasi contoh: impas dengan komisi contoh 20% (harga ÷ 0,8, dibulatkan ke atas Rp 500),
+// jadi pendapatan bersih per menu sama dengan di toko.
+const KOMISI_CONTOH = 20;
+const hargaSaluran = (harga) => ({ gofood: hargaImpas(harga, KOMISI_CONTOH), grabfood: hargaImpas(harga, KOMISI_CONTOH), shopeefood: hargaImpas(harga, KOMISI_CONTOH) });
 
 export function buatKatalog(usaha = 'teh', sekarang = new Date()) {
   const k = KATALOG[usaha];
@@ -42,9 +44,9 @@ export function buatKatalog(usaha = 'teh', sekarang = new Date()) {
       shift: [{ nama: 'Pagi' }, { nama: 'Sore' }], hitungKas: true, toleransiKasRupiah: 0, hitungSemuaBahan: 'outlet', zonaWaktu: 'Asia/Jakarta',
       // GoFood & GrabFood "tersambung" (simulasi), ShopeeFood dicatat manual. Komisi = angka contoh.
       saluran: {
-        gofood: { aktif: true, mode: 'otomatis', komisiPersen: 20, tersambungPada: sejak },
-        grabfood: { aktif: true, mode: 'otomatis', komisiPersen: 20, tersambungPada: sejak },
-        shopeefood: { aktif: true, mode: 'manual', komisiPersen: 20, tersambungPada: null },
+        gofood: { aktif: true, mode: 'otomatis', komisiPersen: KOMISI_CONTOH, tersambungPada: sejak },
+        grabfood: { aktif: true, mode: 'otomatis', komisiPersen: KOMISI_CONTOH, tersambungPada: sejak },
+        shopeefood: { aktif: true, mode: 'manual', komisiPersen: KOMISI_CONTOH, tersambungPada: null },
       },
     },
     pesananMasuk: [],

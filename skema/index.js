@@ -142,7 +142,8 @@ export const BatalBody = z.object({ alasan: teks(200) }).strict();
 
 // ---------- saluran online ----------
 export const SaluranBody = z
-  .object({ aktif: z.boolean(), mode: z.enum(['manual', 'otomatis']), komisiPersen: angkaMinNol.max(100, 'Maksimal 100') })
+  // Komisi < 100%: di 100% harga impas tidak terhingga (lihat hargaImpas di logika/saluran.js).
+  .object({ aktif: z.boolean(), mode: z.enum(['manual', 'otomatis']), komisiPersen: angkaMinNol.max(95, 'Maksimal 95') })
   .strict();
 
 // Pesanan yang dikirim aplikasi (webhook). Bentuk ini sudah dinormalkan: di backend asli, adapter per platform
@@ -175,8 +176,22 @@ export const PembatalanAplikasiBody = z.object({ nomorPesanan: teks(40), alasan:
 
 export const TolakPesananBody = z.object({ alasan: teks(200) }).strict();
 
+// "Paket Berdua" (menu yang dibuat di aplikasi) = 1 Thai Tea Regular + 1 Kopi Susu Regular
+const IsiPaket = z.object({ menuId: id, ukuran: teks(20), qty: z.number().int().min(1, 'Minimal 1').max(10, 'Maksimal 10') }).strict();
 export const PemetaanBody = z
-  .object({ kode: teks(60), menuId: id, ukuran: teks(20), kali: z.number().int().min(1, 'Minimal 1').max(10, 'Maksimal 10') })
+  .object({ kode: teks(60), isi: z.array(IsiPaket).min(1, 'Minimal 1 menu').max(6, 'Maksimal 6 menu') })
+  .strict()
+  .superRefine((p, ctx) => {
+    const k = p.isi.map((i) => `${i.menuId}|${i.ukuran}`);
+    if (new Set(k).size !== k.length) ctx.addIssue({ code: 'custom', path: ['isi'], message: 'Menu dan ukuran yang sama ditulis dua kali; gabungkan jumlahnya' });
+  });
+
+// Simpan harga aplikasi untuk banyak menu sekaligus (satu request, atomik).
+export const HargaSaluranMassalBody = z
+  .object({
+    menu: z.array(z.object({ id, ukuran: z.array(z.object({ nama: teks(20), hargaSaluran: HargaSaluran }).strict()).min(1) }).strict()).max(200),
+    topping: z.array(z.object({ id, hargaSaluran: HargaSaluran }).strict()).max(100),
+  })
   .strict();
 
 // zod issue → detail format API: [{ field, pesan }]

@@ -97,7 +97,7 @@ export function Kepala() {
       </div>
       <nav className="menu">
         {MENU[pengguna.peran].map(([ke, label]) => (
-          <NavLink key={ke} to={ke} end>{label}</NavLink>
+          <NavLink key={ke} to={ke} end={ke === '/owner'}>{label}</NavLink>
         ))}
       </nav>
     </header>

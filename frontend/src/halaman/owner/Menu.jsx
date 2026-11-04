@@ -5,6 +5,7 @@ import { Memuat, Pesan, PesanGalat } from '../../komponen/umum.jsx';
 import { Isian, RingkasanGalat, useKirim, GalatForm } from '../../komponen/form.jsx';
 import { angkaBulatDari, formatRupiah } from '../../komponen/formAngka.js';
 import EditorResep, { barisKosong, resepKeBody, resepKeBaris } from '../../komponen/EditorResep.jsx';
+import { Link } from 'react-router-dom';
 import { SALURAN_ONLINE, NAMA_SALURAN } from '../../../../logika/saluran.js';
 
 // ---------------------------------------------------------------------------
@@ -124,7 +125,7 @@ function FormMenu({ awal, bahan, topping, kategori, onSelesai, onBatal }) {
           </div>
           <details className="harga-saluran" open={SALURAN_ONLINE.some((x) => u.hargaSaluran[x] !== '')}>
             <summary>Harga di aplikasi (GoFood, GrabFood, ShopeeFood)</summary>
-            <p className="bantuan">Kosong = sama dengan harga toko. Stok tetap memakai resep yang sama.</p>
+            <p className="bantuan">Kosong = sama dengan harga toko. Stok tetap memakai resep yang sama. Untuk semua menu sekaligus: <Link to="/owner/aplikasi/harga">tabel harga di aplikasi</Link>.</p>
             <IsianHargaSaluran nilai={u.hargaSaluran} onChange={(hargaSaluran) => setUkuran(i, { hargaSaluran })} perField={pf} awalanField={`ukuran[${i}].hargaSaluran`} hargaToko={u.harga} />
           </details>
           <EditorResep baris={u.resep} onChange={(resep) => setUkuran(i, { resep })} bahan={bahan} perField={pf} awalanField={`ukuran[${i}].resep`} />
@@ -252,6 +253,7 @@ export default function Menu() {
           </span>
         )}
       </div>
+      <p className="bantuan">Harga GoFood, GrabFood, dan ShopeeFood untuk semua menu bisa diatur sekaligus di <Link to="/owner/aplikasi/harga">Aplikasi online → Harga di aplikasi</Link>.</p>
       {sukses && !edit && <Pesan jenis="sukses">{sukses}</Pesan>}
       {edit?.jenis === 'menu' && (
         <FormMenu key={kunciForm} awal={edit.data} bahan={bahanAktif} topping={topping.data} kategori={kategori} onSelesai={selesai} onBatal={() => setEdit(null)} />

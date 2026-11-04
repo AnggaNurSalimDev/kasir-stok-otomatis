@@ -1,13 +1,16 @@
-// Owner: aplikasi pesan-antar. Aktif/tidak, dicatat manual atau tersambung otomatis (simulasi di demo),
-// perkiraan komisi, dan pemetaan menu yang dibuat langsung di aplikasi.
+// Owner: aplikasi pesan-antar, dibagi tiga tab:
+//   /owner/aplikasi            Sambungan  — aktif/tidak, manual atau tersambung (simulasi), komisi
+//   /owner/aplikasi/harga      Harga      — harga GoFood/GrabFood/ShopeeFood untuk semua menu (HargaAplikasi.jsx)
+//   /owner/aplikasi/pemetaan   Pemetaan   — menu yang dibuat langsung di aplikasi → resep kasir
 
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import { useSesi } from '../../sesi/SesiContext.jsx';
 import { useData } from '../../komponen/useData.js';
 import { Memuat, Pesan, PesanGalat } from '../../komponen/umum.jsx';
 import { Isian, RingkasanGalat, useKirim, GalatForm } from '../../komponen/form.jsx';
 import { angkaDari, angkaBulatDari } from '../../komponen/formAngka.js';
+import HargaAplikasi from './HargaAplikasi.jsx';
 
 // Cara menyambungkan sungguhan (per November 2026, dari dokumentasi publik platform). Periksa lagi saat mendaftar.
 const CARA = {
@@ -27,6 +30,10 @@ const CARA = {
     'Sebelum kasir ini menjadi mitra ShopeeFood: dicatat manual, atau lewat agregator yang sudah bermitra (berbayar).',
   ],
 };
+
+// ---------------------------------------------------------------------------
+// Tab: Sambungan
+// ---------------------------------------------------------------------------
 
 function KartuSaluran({ s, onSimpan }) {
   const { api, mode } = useSesi();
@@ -64,7 +71,7 @@ function KartuSaluran({ s, onSimpan }) {
       </label>
       {f.aktif && (
         <>
-          <Isian label="Perkiraan komisi (%)" bantuan="Untuk perkiraan pendapatan bersih di laporan. Cek angka sebenarnya di kontrak aplikasi." galat={pf.komisiPersen}>
+          <Isian label="Perkiraan komisi (%)" bantuan="Dipakai untuk perkiraan pendapatan bersih dan saran harga. Cek angka sebenarnya di kontrak aplikasi." galat={pf.komisiPersen}>
             {(p) => <input {...p} className="angka" inputMode="decimal" value={f.komisiPersen} onChange={(e) => setF({ ...f, komisiPersen: e.target.value })} onBlur={() => angkaDari(f.komisiPersen) !== s.komisiPersen && simpan()} />}
           </Isian>
           <div className="aksi">
@@ -91,69 +98,10 @@ function KartuSaluran({ s, onSimpan }) {
   );
 }
 
-function FormPemetaan({ saluran, item, menu, onSimpan }) {
-  const { api } = useSesi();
-  const [f, setF] = useState({ menuId: '', ukuran: '', kali: '1' });
-  const kirim = useKirim();
-  const m = menu.find((x) => x.id === f.menuId);
-
-  const simpan = async (e) => {
-    e.preventDefault();
-    const hasil = await kirim.jalankan(() => {
-      const kali = angkaBulatDari(f.kali);
-      const detail = [];
-      if (!f.menuId) detail.push({ field: 'menuId', pesan: 'Pilih menu' });
-      if (!f.ukuran) detail.push({ field: 'ukuran', pesan: 'Pilih ukuran' });
-      if (kali === null || kali < 1) detail.push({ field: 'kali', pesan: 'Minimal 1' });
-      if (detail.length) throw new GalatForm(detail);
-      return api(`/saluran/${saluran.id}/pemetaan`, { method: 'PUT', body: { kode: item.kode, menuId: f.menuId, ukuran: f.ukuran, kali } });
-    });
-    if (hasil) onSimpan();
-  };
-
-  return (
-    <form className="kartu" onSubmit={simpan} noValidate>
-      <p><strong>{item.nama}</strong> <small>({saluran.nama} · kode {item.kode})</small></p>
-      <RingkasanGalat galat={kirim.galat} />
-      <div className="baris-isian">
-        <Isian label="Sama dengan menu kasir" galat={kirim.perField.menuId}>
-          {(p) => (
-            <select {...p} value={f.menuId} onChange={(e) => setF({ ...f, menuId: e.target.value, ukuran: menu.find((x) => x.id === e.target.value)?.ukuran[0].nama ?? '' })}>
-              <option value="">Pilih menu…</option>
-              {menu.map((x) => <option key={x.id} value={x.id}>{x.nama}</option>)}
-            </select>
-          )}
-        </Isian>
-        <Isian label="Ukuran" galat={kirim.perField.ukuran}>
-          {(p) => (
-            <select {...p} value={f.ukuran} onChange={(e) => setF({ ...f, ukuran: e.target.value })} disabled={!m}>
-              {m?.ukuran.map((u) => <option key={u.nama} value={u.nama}>{u.nama}</option>)}
-            </select>
-          )}
-        </Isian>
-        <Isian label="Isi per pesanan" bantuan="Paket berisi 2 gelas → 2" galat={kirim.perField.kali}>
-          {(p) => <input {...p} className="angka" inputMode="numeric" value={f.kali} onChange={(e) => setF({ ...f, kali: e.target.value })} />}
-        </Isian>
-      </div>
-      <button type="submit" className="tombol-utama" disabled={kirim.sedang}>Simpan pemetaan</button>
-    </form>
-  );
-}
-
-export default function Aplikasi() {
+function TabSambungan({ saluran, muatUlang }) {
   const { mode } = useSesi();
-  const saluran = useData('/saluran');
-  const menu = useData('/menu');
-  if (saluran.memuat || menu.memuat) return <Memuat />;
-  const galat = saluran.galat ?? menu.galat;
-  if (galat) return <PesanGalat galat={galat} ulangi={() => { saluran.muatUlang(); menu.muatUlang(); }} />;
-
-  const belum = saluran.data.flatMap((s) => s.belumDikenali.map((item) => ({ s, item })));
-  const pemetaan = saluran.data.flatMap((s) => s.pemetaan.map((p) => ({ s, p })));
-
   return (
-    <section>
-      <h1>Aplikasi pesan-antar</h1>
+    <>
       {mode === 'mock' && (
         <Pesan>
           Ini demo: sambungan ke GoFood dan GrabFood di bawah adalah <strong>simulasi</strong>. Alur, aturan, dan data yang masuk sama dengan sambungan
@@ -161,45 +109,206 @@ export default function Aplikasi() {
           <Link to="/owner/pesanan-online">Pesanan online</Link>.
         </Pesan>
       )}
-
       <pre className="alur" aria-label="Alur pesanan otomatis">{`Pelanggan pesan di GoFood
         │
         ▼
 GoFood mengirim pesanan ke server kasir   (nomor sama dikirim ulang → tidak dicatat dua kali)
         │
         ▼
-Menu aplikasi dicocokkan ke resep kasir   (menu yang dibuat di aplikasi → dipetakan owner sekali)
+Menu aplikasi dicocokkan ke resep kasir   (menu yang dibuat di aplikasi → lihat tab Pemetaan menu)
         │
         ▼
 Crew tekan Terima → transaksi + stok bahan berkurang otomatis, tanpa mengetik ulang`}</pre>
-
       <div className="kisi-kartu">
-        {saluran.data.map((s) => <KartuSaluran key={s.id} s={s} onSimpan={saluran.muatUlang} />)}
+        {saluran.map((s) => <KartuSaluran key={s.id} s={s} onSimpan={muatUlang} />)}
       </div>
+    </>
+  );
+}
 
-      <h2 className="subjudul">Menu yang belum dikenali ({belum.length})</h2>
-      <p className="bantuan">
-        Menu yang dikirim dari kasir ke aplikasi langsung dikenali. Menu yang dibuat langsung di aplikasi (misalnya paket) perlu dipetakan sekali ke resep kasir,
-        supaya stok berkurang dengan benar. Sebelum dipetakan, pesanannya tidak bisa diterima.
+// ---------------------------------------------------------------------------
+// Tab: Pemetaan menu
+// ---------------------------------------------------------------------------
+
+function PenjelasanPemetaan({ terbuka }) {
+  return (
+    <details className="kartu penjelasan" open={terbuka}>
+      <summary><strong>Apa itu pemetaan menu?</strong></summary>
+      <p>
+        Kasir mengurangi stok berdasarkan <strong>resep</strong>. Jadi setiap menu yang dipesan lewat aplikasi harus jelas: menu ini memakai resep kasir yang mana?
       </p>
-      {belum.length === 0 && <p className="bantuan">Semua menu di pesanan yang menunggu sudah dikenali.</p>}
-      {belum.map(({ s, item }) => <FormPemetaan key={`${s.id}-${item.kode}`} saluran={s} item={item} menu={menu.data} onSimpan={saluran.muatUlang} />)}
+      <ul>
+        <li><strong>Menu yang dikirim dari kasir ke aplikasi</strong> (misalnya Thai Tea Large) langsung dikenali. Tidak perlu diatur apa-apa.</li>
+        <li><strong>Menu yang dibuat langsung di aplikasi</strong>, misalnya <em>Paket Berdua</em> atau <em>Promo Gajian</em>, tidak dikenali kasir: kasir tidak tahu isinya.</li>
+      </ul>
+      <p>Pemetaan artinya <strong>memberi tahu kasir isi menu itu, cukup sekali</strong>:</p>
+      <pre className="alur">{`Pesanan GoFood:   1× Paket Berdua                (menu buatan di aplikasi)
+                         │
+                         │  pemetaan (diisi owner sekali)
+                         ▼
+Resep kasir:      1× Thai Tea Regular   +   1× Kopi Susu Regular
+                         │                          │
+Stok berkurang:   creamer, air thai tea…     biji kopi, susu cair…`}</pre>
+      <p>
+        Setelah dipetakan, setiap pesanan Paket Berdua berikutnya langsung dikenali dan stoknya berkurang sendiri.
+        Sebelum dipetakan, pesanan yang berisi menu itu <strong>tidak bisa diterima</strong> crew. Ini disengaja: lebih baik menunggu sebentar daripada stok berkurang dengan resep yang salah.
+      </p>
+      <p className="bantuan">Harga paket tetap mengikuti harga di aplikasi (yang dibayar pelanggan). Pemetaan hanya menentukan bahan yang terpakai.</p>
+    </details>
+  );
+}
 
-      {pemetaan.length > 0 && (
-        <>
-          <h2 className="subjudul">Pemetaan tersimpan</h2>
-          <div className="tabel-gulir">
-            <table className="tabel-kecil">
-              <thead><tr><th>Aplikasi</th><th>Kode menu aplikasi</th><th>Resep kasir</th></tr></thead>
-              <tbody>
-                {pemetaan.map(({ s, p }) => (
-                  <tr key={`${s.id}-${p.kode}`}><td>{s.nama}</td><td>{p.kode}</td><td>{p.kali > 1 ? `${p.kali}× ` : ''}{p.namaMenu} {p.ukuran}</td></tr>
-                ))}
-              </tbody>
-            </table>
+const isiKosong = () => ({ menuId: '', ukuran: '', qty: '1' });
+
+function FormPemetaan({ saluran, item, menu, onSimpan }) {
+  const { api } = useSesi();
+  const [isi, setIsi] = useState([isiKosong()]);
+  const kirim = useKirim();
+  const pf = kirim.perField;
+  const ubahBaris = (i, perubahan) => setIsi(isi.map((b, j) => (j === i ? { ...b, ...perubahan } : b)));
+  const menuById = new Map(menu.map((m) => [m.id, m]));
+
+  // Kalimat pratinjau dari isian yang sudah lengkap: "1× Paket Berdua = 1× Thai Tea Regular + 1× Kopi Susu Regular"
+  const lengkap = isi.filter((b) => b.menuId && b.ukuran && angkaBulatDari(b.qty) >= 1);
+  const kalimat = lengkap.map((b) => `${angkaBulatDari(b.qty)}× ${menuById.get(b.menuId)?.nama} ${b.ukuran}`).join(' + ');
+
+  const simpan = async (e) => {
+    e.preventDefault();
+    const hasil = await kirim.jalankan(() => {
+      const detail = [];
+      const body = isi.map((b, i) => {
+        const qty = angkaBulatDari(b.qty);
+        if (!b.menuId) detail.push({ field: `isi[${i}].menuId`, pesan: `Baris ${i + 1}: pilih menu` });
+        if (b.menuId && !b.ukuran) detail.push({ field: `isi[${i}].ukuran`, pesan: `Baris ${i + 1}: pilih ukuran` });
+        if (qty === null || qty < 1) detail.push({ field: `isi[${i}].qty`, pesan: `Baris ${i + 1}: jumlah minimal 1` });
+        return { menuId: b.menuId, ukuran: b.ukuran, qty: qty ?? 0 };
+      });
+      if (detail.length) throw new GalatForm(detail);
+      return api(`/saluran/${saluran.id}/pemetaan`, { method: 'PUT', body: { kode: item.kode, isi: body } });
+    });
+    if (hasil) onSimpan(`${item.nama} sekarang dikenali kasir.`);
+  };
+
+  return (
+    <form className="kartu" onSubmit={simpan} noValidate>
+      <div className="judul-aksi">
+        <h3>{item.nama}</h3>
+        <small>{saluran.nama} · kode di aplikasi: {item.kode}</small>
+      </div>
+      <p>Isi <strong>1 {item.nama}</strong> menurut resep kasir:</p>
+      <RingkasanGalat galat={kirim.galat} />
+      {isi.map((b, i) => {
+        const m = menuById.get(b.menuId);
+        return (
+          <div key={i} className="baris-isi-paket">
+            <Isian label="Jumlah" galat={pf[`isi[${i}].qty`]}>
+              {(p) => <input {...p} className="angka" inputMode="numeric" value={b.qty} onChange={(e) => ubahBaris(i, { qty: e.target.value })} />}
+            </Isian>
+            <Isian label="Menu kasir" galat={pf[`isi[${i}].menuId`]}>
+              {(p) => (
+                <select {...p} value={b.menuId} onChange={(e) => ubahBaris(i, { menuId: e.target.value, ukuran: menuById.get(e.target.value)?.ukuran[0].nama ?? '' })}>
+                  <option value="">Pilih menu…</option>
+                  {menu.map((x) => <option key={x.id} value={x.id}>{x.nama}</option>)}
+                </select>
+              )}
+            </Isian>
+            <Isian label="Ukuran" galat={pf[`isi[${i}].ukuran`]}>
+              {(p) => (
+                <select {...p} value={b.ukuran} onChange={(e) => ubahBaris(i, { ukuran: e.target.value })} disabled={!m}>
+                  {!m && <option value="">–</option>}
+                  {m?.ukuran.map((u) => <option key={u.nama} value={u.nama}>{u.nama}</option>)}
+                </select>
+              )}
+            </Isian>
+            {isi.length > 1 && <button type="button" className="tombol-kecil" aria-label={`Hapus baris ${i + 1}`} onClick={() => setIsi(isi.filter((_, j) => j !== i))}>Hapus</button>}
           </div>
-        </>
+        );
+      })}
+      {pf.isi && <small className="teks-galat">{pf.isi}</small>}
+      {isi.length < 6 && <button type="button" className="tombol-kecil" onClick={() => setIsi([...isi, isiKosong()])}>+ Tambah menu lain di paket ini</button>}
+      <p className="pratinjau-pemetaan" aria-live="polite">
+        {kalimat ? <>1× {item.nama} = <strong>{kalimat}</strong></> : <span className="teks-redup">Pilih menu untuk melihat hasilnya.</span>}
+      </p>
+      <button type="submit" className="tombol-utama" disabled={kirim.sedang}>{kirim.sedang ? 'Menyimpan…' : 'Simpan pemetaan'}</button>
+    </form>
+  );
+}
+
+function TabPemetaan({ saluran, menu, muatUlang }) {
+  const { api } = useSesi();
+  const [kabar, setKabar] = useState(null);
+  const hapus = useKirim();
+  const belum = saluran.flatMap((s) => s.belumDikenali.map((item) => ({ s, item })));
+  const tersimpan = saluran.flatMap((s) => s.pemetaan.map((p) => ({ s, p })));
+  const selesai = (pesan) => { setKabar(pesan); muatUlang(); };
+
+  return (
+    <>
+      <PenjelasanPemetaan terbuka={tersimpan.length === 0} />
+      {kabar && <Pesan jenis="sukses">{kabar} Pesanan yang menunggu sekarang bisa diterima di <Link to="/owner/pesanan-online">Pesanan online</Link>.</Pesan>}
+
+      <h2 className="subjudul">Perlu dipetakan ({belum.length})</h2>
+      {belum.length === 0 ? (
+        <p className="bantuan">Tidak ada. Semua menu di pesanan yang menunggu sudah dikenali kasir. Menu baru yang dibuat di aplikasi akan muncul di sini saat pertama kali dipesan.</p>
+      ) : (
+        belum.map(({ s, item }) => <FormPemetaan key={`${s.id}-${item.kode}`} saluran={s} item={item} menu={menu} onSimpan={selesai} />)
       )}
+
+      <h2 className="subjudul">Sudah dipetakan</h2>
+      <RingkasanGalat galat={hapus.galat} />
+      {tersimpan.length === 0 ? (
+        <p className="bantuan">Belum ada.</p>
+      ) : (
+        <div className="tabel-gulir">
+          <table className="tabel-kecil">
+            <thead><tr><th>Aplikasi</th><th>Menu di aplikasi</th><th>Isi menurut resep kasir</th><th /></tr></thead>
+            <tbody>
+              {tersimpan.map(({ s, p }) => (
+                <tr key={`${s.id}-${p.kode}`}>
+                  <td>{s.nama}</td>
+                  <td>{p.nama}<br /><small className="teks-redup">{p.kode}</small></td>
+                  <td>{p.isi.map((k) => `${k.qty}× ${k.nama} ${k.ukuran}`).join(' + ')}</td>
+                  <td>
+                    <button type="button" className="tombol-kecil" disabled={hapus.sedang}
+                      onClick={async () => { if (await hapus.jalankan(() => api(`/saluran/${s.id}/pemetaan/${encodeURIComponent(p.kode)}`, { method: 'DELETE' }))) selesai(`Pemetaan ${p.nama} dihapus.`); }}>
+                      Hapus
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="bantuan">Isi paket berubah? Hapus pemetaannya; saat paket itu dipesan lagi, ia muncul di "Perlu dipetakan" untuk diisi ulang.</p>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Halaman
+// ---------------------------------------------------------------------------
+
+export default function Aplikasi({ tab = 'sambungan' }) {
+  const saluran = useData('/saluran');
+  const menu = useData('/menu');
+  if (saluran.memuat || menu.memuat) return <Memuat />;
+  const galat = saluran.galat ?? menu.galat;
+  if (galat) return <PesanGalat galat={galat} ulangi={() => { saluran.muatUlang(); menu.muatUlang(); }} />;
+  const jumlahBelum = saluran.data.reduce((a, s) => a + s.belumDikenali.length, 0);
+
+  return (
+    <section>
+      <h1>Aplikasi pesan-antar</h1>
+      <nav className="tab-sub" aria-label="Bagian aplikasi online">
+        <NavLink to="/owner/aplikasi" end>Sambungan</NavLink>
+        <NavLink to="/owner/aplikasi/harga">Harga di aplikasi</NavLink>
+        <NavLink to="/owner/aplikasi/pemetaan">Pemetaan menu{jumlahBelum > 0 && <span className="lencana lencana-cek">{jumlahBelum}</span>}</NavLink>
+      </nav>
+      {tab === 'sambungan' && <TabSambungan saluran={saluran.data} muatUlang={saluran.muatUlang} />}
+      {tab === 'harga' && <HargaAplikasi saluran={saluran.data} />}
+      {tab === 'pemetaan' && <TabPemetaan saluran={saluran.data} menu={menu.data} muatUlang={saluran.muatUlang} />}
     </section>
   );
 }
+

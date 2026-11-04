@@ -37,12 +37,12 @@ describe('pencatatan manual pesanan aplikasi', () => {
   it('ShopeeFood (manual): harga saluran, wajib nomor, dibayar aplikasi, tidak masuk kas', async () => {
     await buka();
     const struk = await panggil('/transaksi', 'POST', { item: thaiTea(), saluran: 'shopeefood', nomorPesanan: 'SF-1', metodeBayar: 'aplikasi' });
-    expect(struk.total).toBe(14000); // 12.000 × 1,15 dibulatkan ke atas Rp 500
+    expect(struk.total).toBe(15000); // impas komisi 20%: 12.000 ÷ 0,8
     expect(struk.namaSaluran).toBe('ShopeeFood');
     const tutup = await panggil('/shift/tutup', 'POST', { hitungan: KUNCI, kasAkhir: 200000 });
     const detail = await panggil(`/shift/${tutup.id}`, 'GET', undefined, 'owner');
     expect(detail.hasil.kas.status).toBe('wajar'); // laci tetap 200.000
-    expect(detail.perSaluran.shopeefood).toMatchObject({ jumlah: 1, total: 14000 });
+    expect(detail.perSaluran.shopeefood).toMatchObject({ jumlah: 1, total: 15000 });
   });
 
   it('aturan bentuk: online wajib nomor & bayar aplikasi; toko tidak boleh nomor atau bayar aplikasi (A-20)', async () => {
@@ -119,8 +119,8 @@ describe('pesanan otomatis (simulasi webhook)', () => {
 
     const saluran = (await panggil('/saluran', 'GET', undefined, 'owner')).find((s) => s.id === 'grabfood');
     expect(saluran.belumDikenali.map((x) => x.kode)).toEqual([KODE_TIDAK_DIKENAL]);
-    expect((await galat(panggil('/saluran/grabfood/pemetaan', 'PUT', { kode: KODE_TIDAK_DIKENAL, menuId: 'thaiTea', ukuran: 'Jumbo', kali: 2 }, 'owner'))).perField).toHaveProperty('ukuran');
-    await panggil('/saluran/grabfood/pemetaan', 'PUT', { kode: KODE_TIDAK_DIKENAL, menuId: 'thaiTea', ukuran: 'Regular', kali: 2 }, 'owner');
+    expect((await galat(panggil('/saluran/grabfood/pemetaan', 'PUT', { kode: KODE_TIDAK_DIKENAL, isi: [{ menuId: 'thaiTea', ukuran: 'Jumbo', qty: 2 }] }, 'owner'))).perField).toHaveProperty('isi[0].ukuran');
+    await panggil('/saluran/grabfood/pemetaan', 'PUT', { kode: KODE_TIDAK_DIKENAL, isi: [{ menuId: 'thaiTea', ukuran: 'Regular', qty: 2 }] }, 'owner');
 
     const { struk } = await panggil(`/pesanan-online/${p.id}/terima`, 'POST');
     expect(struk.total).toBe(25000); // harga paket dari aplikasi
@@ -188,6 +188,60 @@ describe('pesanan otomatis (simulasi webhook)', () => {
     expect((await panggil('/transaksi', 'POST', { item, saluran: 'shopeefood', nomorPesanan: 'S1', metodeBayar: 'aplikasi' })).total).toBe(13000);
     const p = await panggil('/integrasi/gofood/pesanan', 'POST', pesanan('F-9', [{ kode: 'americano:Regular', nama: 'Americano', qty: 1, harga: 17000, topping: [] }]));
     expect(p.hargaBerbeda).toBe(false);
+  });
+});
+
+describe('pemetaan paket isi campuran', () => {
+  const paket = [{ kode: 'PKT-1', nama: 'Paket Ngopi Berdua', qty: 2, harga: 30001, topping: [] }];
+  it('1 paket = 1 Thai Tea + 1 Kopi Susu: dua menu tercatat, total tetap persis, stok kedua resep berkurang', async () => {
+    await buka();
+    const p = await panggil('/integrasi/gofood/pesanan', 'POST', pesanan('F-PK', paket));
+    await panggil('/saluran/gofood/pemetaan', 'PUT', { kode: 'PKT-1', isi: [{ menuId: 'thaiTea', ukuran: 'Regular', qty: 1 }, { menuId: 'kopiSusu', ukuran: 'Regular', qty: 1 }] }, 'owner');
+    const tampil = (await panggil('/pesanan-online')).menunggu[0];
+    expect(tampil.item[0]).toMatchObject({ paket: true, hargaBerbeda: false, isiKasir: [{ nama: 'Thai Tea', qty: 1 }, { nama: 'Kopi Susu', qty: 1 }] });
+    const { struk } = await panggil(`/pesanan-online/${p.id}/terima`, 'POST');
+    expect(struk.total).toBe(60002); // 2 paket × 30.001, tidak ada rupiah yang hilang karena pembagian
+    expect(struk.item.map((i) => [i.nama, i.qty])).toEqual([['Thai Tea', 2], ['Kopi Susu', 2]]);
+    const pakai = (await panggil('/laporan/harian')).pemakaian;
+    expect(pakai.find((b) => b.bahanId === 'airThaiTea').jumlah).toBe(300); // 2 × 1 garis bawah
+    expect(pakai.find((b) => b.bahanId === 'bijiKopi').jumlah).toBe(36); // 2 × 1 shot
+  });
+  it('menu dobel di isi paket ditolak; kode hasil sinkron tidak perlu dipetakan; pemetaan bisa dihapus', async () => {
+    const dobel = [{ menuId: 'thaiTea', ukuran: 'Regular', qty: 1 }, { menuId: 'thaiTea', ukuran: 'Regular', qty: 1 }];
+    expect((await galat(panggil('/saluran/gofood/pemetaan', 'PUT', { kode: 'X', isi: dobel }, 'owner'))).perField).toHaveProperty('isi');
+    expect((await galat(panggil('/saluran/gofood/pemetaan', 'PUT', { kode: 'thaiTea:Regular', isi: [dobel[0]] }, 'owner'))).status).toBe(409);
+    await panggil('/saluran/gofood/pemetaan', 'PUT', { kode: 'X', isi: [dobel[0]] }, 'owner');
+    expect((await panggil('/saluran/gofood/pemetaan/X', 'DELETE', undefined, 'owner')).pemetaan).toEqual([]);
+    expect((await galat(panggil('/saluran/gofood/pemetaan/X', 'DELETE', undefined, 'owner'))).status).toBe(404);
+  });
+});
+
+describe('harga aplikasi massal', () => {
+  it('tersimpan untuk menu & topping; satu baris salah → tidak ada yang berubah (atomik)', async () => {
+    const body = { menu: [{ id: 'americano', ukuran: [{ nama: 'Regular', hargaSaluran: { gofood: 17000 } }] }], topping: [{ id: 'tpBoba', hargaSaluran: { gofood: 4000, grabfood: 4000 } }] };
+    await panggil('/harga-saluran', 'PUT', body, 'owner');
+    const menu = await panggil('/menu', 'GET', undefined, 'owner');
+    expect(menu.find((m) => m.id === 'americano').ukuran[0].hargaSaluran).toEqual({ gofood: 17000 });
+    const salah = { menu: [{ id: 'americano', ukuran: [{ nama: 'Regular', hargaSaluran: { gofood: 99000 } }] }, { id: 'hilang', ukuran: [{ nama: 'R', hargaSaluran: {} }] }], topping: [] };
+    expect((await galat(panggil('/harga-saluran', 'PUT', salah, 'owner'))).perField).toHaveProperty('menu[1].id');
+    expect((await panggil('/menu', 'GET', undefined, 'owner')).find((m) => m.id === 'americano').ukuran[0].hargaSaluran.gofood).toBe(17000);
+    expect((await galat(panggil('/harga-saluran', 'PUT', body))).status).toBe(403);
+  });
+});
+
+describe('laporan rentang tanggal', () => {
+  it('owner bisa rentang ≤ 31 hari; crew hanya hari ini; rentang terbalik ditolak', async () => {
+    const lap = await panggil('/laporan/harian?dari=2026-10-30&sampai=2026-11-03', 'GET', undefined, 'owner');
+    expect(lap).toMatchObject({ dari: '2026-10-30', sampai: '2026-11-03', jumlahHari: 5 });
+    expect((await galat(panggil('/laporan/harian?dari=2026-11-03&sampai=2026-11-01', 'GET', undefined, 'owner'))).perField).toHaveProperty('sampai');
+    expect((await galat(panggil('/laporan/harian?dari=2026-09-01&sampai=2026-11-03', 'GET', undefined, 'owner'))).message).toMatch(/terlalu panjang/);
+    expect((await galat(panggil('/laporan/harian?dari=2026-11-02&sampai=2026-11-03'))).status).toBe(403);
+    expect((await galat(panggil('/laporan/harian?dari=2026-13-01', 'GET', undefined, 'owner'))).status).toBe(400);
+  });
+  it('transaksi membawa nama shift dan tanggal (untuk filter)', async () => {
+    await buka();
+    await panggil('/transaksi', 'POST', { item: thaiTea(), metodeBayar: 'qris' });
+    expect((await panggil('/laporan/harian')).transaksi[0]).toMatchObject({ shift: 'Pagi', tanggal: '2026-11-03', saluran: 'toko' });
   });
 });
 

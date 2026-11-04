@@ -147,8 +147,8 @@ function KartuPesanan({ p, adaShift, peran, onSelesai }) {
               {it.topping.length > 0 && <small> + {it.topping.map((t) => t.nama).join(', ')}</small>}
               <br />
               {it.masalah
-                ? <small className="teks-galat">⚠ {it.masalah}{peran === 'owner' ? <> · <Link to="/owner/aplikasi">petakan</Link></> : ' · minta owner memetakan'}</small>
-                : <small className="teks-redup">→ resep kasir: {it.menuKasir.kali > 1 ? `${it.menuKasir.kali}× ` : ''}{it.menuKasir.nama} {it.menuKasir.ukuran}</small>}
+                ? <small className="teks-galat">⚠ {it.masalah}{peran === 'owner' ? <> · <Link to="/owner/aplikasi/pemetaan">kenalkan ke kasir (pemetaan)</Link></> : ' · minta owner memetakannya di Aplikasi online → Pemetaan menu'}</small>
+                : <small className="teks-redup">→ resep kasir: {it.isiKasir.map((k) => `${k.qty > 1 || it.isiKasir.length > 1 ? `${k.qty}× ` : ''}${k.nama} ${k.ukuran}`).join(' + ')}{it.paket && ' (pemetaan)'}</small>}
             </span>
             <span className="kanan">{formatRupiah(it.harga * it.qty)}</span>
           </li>
