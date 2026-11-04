@@ -8,6 +8,56 @@ import EditorResep, { barisKosong, resepKeBody, resepKeBaris } from '../../kompo
 import { Link, useLocation } from 'react-router-dom';
 import EditorIsiPaket, { isiKosong, isiKeBody, isiKeForm, kalimatIsi, hargaIsiToko } from '../../komponen/EditorIsiPaket.jsx';
 import { SALURAN_ONLINE, NAMA_SALURAN } from '../../../../logika/saluran.js';
+import { NAMA_HARI, ringkasJadwal, periksaJadwal } from '../../../../logika/jadwal.js';
+
+// Label status jual paket (dari GET /paket, dihitung server saat diminta).
+export const LABEL_STATUS_PAKET = {
+  berlaku: ['Dijual sekarang', 'lencana-ok'],
+  terjadwal: ['Terjadwal, belum mulai', 'lencana-netral'],
+  bukan_hari: ['Tidak berlaku hari ini', 'lencana-netral'],
+  berakhir: ['Promo berakhir', 'lencana-cek'],
+  nonaktif: ['Nonaktif', 'lencana-netral'],
+};
+const URUT_HARI = [1, 2, 3, 4, 5, 6, 0]; // Senin → Minggu
+
+// Form jadwal ↔ body: kosong semua = tanpa jadwal (setiap hari, tanpa batas).
+const jadwalKeForm = (j) => ({ mulai: j?.mulai ?? '', selesai: j?.selesai ?? '', hari: j?.hari ?? [] });
+function jadwalKeBody(f) {
+  const j = {};
+  if (f.mulai) j.mulai = f.mulai;
+  if (f.selesai) j.selesai = f.selesai;
+  if (f.hari.length) j.hari = [...f.hari].sort((a, b) => a - b);
+  return Object.keys(j).length ? j : undefined;
+}
+
+function IsianJadwal({ nilai, onChange, perField }) {
+  const ringkas = ringkasJadwal(jadwalKeBody(nilai));
+  return (
+    <fieldset>
+      <legend>Jadwal promo (opsional)</legend>
+      <p className="bantuan">Kosongkan semua jika paket dijual setiap hari tanpa batas. Waktu mengikuti jam outlet. Di luar jadwal, paket tidak bisa dipilih di kasir.</p>
+      <div className="baris-isian">
+        <Isian label="Mulai" galat={perField['jadwal.mulai']}>
+          {(p) => <input {...p} type="datetime-local" value={nilai.mulai} onChange={(e) => onChange({ ...nilai, mulai: e.target.value })} />}
+        </Isian>
+        <Isian label="Selesai" bantuan="Tepat pada waktu ini promo berhenti" galat={perField['jadwal.selesai']}>
+          {(p) => <input {...p} type="datetime-local" value={nilai.selesai} min={nilai.mulai || undefined} onChange={(e) => onChange({ ...nilai, selesai: e.target.value })} />}
+        </Isian>
+      </div>
+      <div role="group" aria-label="Hari promo" className="daftar-centang">
+        <span>Hanya hari:</span>
+        {URUT_HARI.map((h) => (
+          <label key={h} className="centang">
+            <input type="checkbox" checked={nilai.hari.includes(h)} onChange={(e) => onChange({ ...nilai, hari: e.target.checked ? [...nilai.hari, h] : nilai.hari.filter((x) => x !== h) })} />
+            {NAMA_HARI[h]}
+          </label>
+        ))}
+      </div>
+      {perField['jadwal.hari'] && <small className="teks-galat">{perField['jadwal.hari']}</small>}
+      <p className="pratinjau-pemetaan" aria-live="polite">Berlaku: <strong>{ringkas}</strong></p>
+    </fieldset>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Harga per aplikasi (kosong = sama dengan harga toko)
@@ -222,8 +272,8 @@ function FormPaket({ awal, menu, onSelesai, onBatal }) {
   const { api } = useSesi();
   const [f, setF] = useState(() =>
     awal
-      ? { nama: awal.nama, isi: isiKeForm(awal.isi), hargaSaluran: hargaSaluranKeForm(awal.hargaSaluran), aktif: awal.aktif }
-      : { nama: '', isi: [isiKosong()], hargaSaluran: hargaSaluranKeForm(), aktif: true },
+      ? { nama: awal.nama, isi: isiKeForm(awal.isi), hargaSaluran: hargaSaluranKeForm(awal.hargaSaluran), aktif: awal.aktif, jadwal: jadwalKeForm(awal.jadwal) }
+      : { nama: '', isi: [isiKosong()], hargaSaluran: hargaSaluranKeForm(), aktif: true, jadwal: jadwalKeForm(null) },
   );
   const kirim = useKirim();
   const pf = kirim.perField;
@@ -236,10 +286,11 @@ function FormPaket({ awal, menu, onSelesai, onBatal }) {
     const hasil = await kirim.jalankan(() => {
       const isi = isiKeBody(f.isi);
       const hs = hargaSaluranKeBody(f.hargaSaluran, 'hargaSaluran', f.nama || 'Paket');
-      const detail = [...isi.detail, ...hs.detail];
+      const jadwal = jadwalKeBody(f.jadwal);
+      const detail = [...isi.detail, ...hs.detail, ...periksaJadwal(jadwal)];
       if (Object.keys(hs.hargaSaluran).length === 0 && hs.detail.length === 0) detail.push({ field: 'hargaSaluran', pesan: 'Isi harga minimal di satu aplikasi' });
       if (detail.length) throw new GalatForm(detail);
-      return api(awal ? `/paket/${awal.id}` : '/paket', { method: awal ? 'PUT' : 'POST', body: { nama: f.nama, isi: isi.isi, hargaSaluran: hs.hargaSaluran, aktif: f.aktif } });
+      return api(awal ? `/paket/${awal.id}` : '/paket', { method: awal ? 'PUT' : 'POST', body: { nama: f.nama, isi: isi.isi, hargaSaluran: hs.hargaSaluran, aktif: f.aktif, ...(jadwal && { jadwal }) } });
     });
     if (hasil) onSelesai(awal ? 'Paket disimpan' : 'Paket ditambahkan. Di sambungan sungguhan, paket ikut dikirim ke aplikasi saat menu disinkron.');
   };
@@ -264,9 +315,11 @@ function FormPaket({ awal, menu, onSelesai, onBatal }) {
         <IsianHargaSaluran nilai={f.hargaSaluran} onChange={(hargaSaluran) => setF({ ...f, hargaSaluran })} perField={pf} awalanField="hargaSaluran" placeholderKosong="tidak dijual" />
         {pf.hargaSaluran && <small className="teks-galat">{pf.hargaSaluran}</small>}
       </fieldset>
+      {/* Galat jadwal lama dihapus begitu jadwal diubah, supaya tidak tampil untuk isian yang sudah benar. */}
+      <IsianJadwal nilai={f.jadwal} onChange={(jadwal) => { setF({ ...f, jadwal }); if (kirim.galat) kirim.reset(); }} perField={pf} />
       <label className="centang">
         <input type="checkbox" checked={f.aktif} onChange={(e) => setF({ ...f, aktif: e.target.checked })} />
-        Aktif (dijual). Matikan saat promo selesai; riwayat penjualan tetap tersimpan.
+        Aktif. Matikan untuk menghentikan paket kapan saja, di luar jadwal; riwayat penjualan tetap tersimpan.
       </label>
       <div className="aksi">
         <button type="submit" className="tombol-utama" disabled={kirim.sedang}>{kirim.sedang ? 'Menyimpan…' : 'Simpan'}</button>
@@ -370,8 +423,9 @@ export default function Menu() {
               <h3>{p.nama}</h3>
               <button type="button" className="tombol-kecil" onClick={() => mulai('paket', p)}>Ubah</button>
             </div>
-            {!p.aktif && <span className="lencana lencana-netral">Nonaktif</span>}
+            <span className={`lencana ${LABEL_STATUS_PAKET[p.status][1]}`}>{LABEL_STATUS_PAKET[p.status][0]}</span>
             <p><small>{p.isi.map((k) => `${k.qty}× ${k.nama} ${k.ukuran}`).join(' + ')}</small></p>
+            <p><small>🗓 {p.ringkasJadwal}</small></p>
             <p>
               {SALURAN_ONLINE.map((x) => (Number.isInteger(p.hargaSaluran[x]) ? `${NAMA_SALURAN[x]} ${formatRupiah(p.hargaSaluran[x])}` : null)).filter(Boolean).join(' · ')}
               <br /><small className="teks-redup">Isi jika dibeli terpisah di toko: {formatRupiah(p.hargaIsiToko)}</small>

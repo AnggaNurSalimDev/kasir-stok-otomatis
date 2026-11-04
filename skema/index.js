@@ -11,6 +11,7 @@
 
 import { z } from 'zod';
 import { SALURAN, SALURAN_ONLINE } from '../logika/saluran.js';
+import { periksaJadwal } from '../logika/jadwal.js';
 
 const teks = (maks) => z.string().trim().min(1, 'Wajib diisi').max(maks, `Maksimal ${maks} karakter`);
 const id = z.string().min(1).max(60);
@@ -197,12 +198,21 @@ export const PemetaanBody = z
   });
 
 // Paket promo khusus aplikasi: dirancang di kasir, isinya menu kasir, harga per aplikasi (yang kosong = tidak dijual di sana).
+// Jadwal promo (opsional): waktu lokal outlet "YYYY-MM-DDTHH:mm"; hari 0 = Minggu. Kosong = setiap hari, tanpa batas.
+const JadwalPaket = z
+  .object({ mulai: z.string().optional(), selesai: z.string().optional(), hari: z.array(z.number().int()).optional() })
+  .strict()
+  .superRefine((j, ctx) => {
+    for (const d of periksaJadwal(j)) ctx.addIssue({ code: 'custom', path: [d.field.replace(/^jadwal\./, '')], message: d.pesan });
+  });
+
 export const PaketBody = z
   .object({
     nama: teks(60),
     isi: z.array(IsiPaket).min(1, 'Minimal 1 menu').max(6, 'Maksimal 6 menu'),
     hargaSaluran: HargaSaluran,
     aktif: z.boolean().default(true),
+    jadwal: JadwalPaket.optional(),
   })
   .strict()
   .superRefine((p, ctx) => {

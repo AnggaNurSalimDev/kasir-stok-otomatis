@@ -77,6 +77,8 @@ CREATE TABLE paket (
   id uuid PRIMARY KEY, outlet_id uuid REFERENCES outlet,
   nama text NOT NULL, aktif boolean NOT NULL DEFAULT true,
   harga_saluran jsonb NOT NULL,     -- { gofood: 30500, … }, minimal satu; kosong = tidak dijual di sana
+  jadwal_mulai timestamp, jadwal_selesai timestamp,  -- waktu lokal outlet; selesai eksklusif
+  jadwal_hari smallint[],           -- 0 = Minggu; NULL = setiap hari
   UNIQUE (outlet_id, lower(nama))
 );
 CREATE TABLE paket_isi (
@@ -85,6 +87,10 @@ CREATE TABLE paket_isi (
   PRIMARY KEY (paket_id, menu_id, ukuran)
 );
 -- Ubah menu: ukuran yang dipakai paket tidak boleh dihapus (409).
+-- Jadwal promo (logika/jadwal.js: statusPaket): pekerjaan terjadwal tiap menit menyinkronkan menu ke platform
+-- saat paket mulai/berhenti berlaku, supaya paket hilang dari aplikasi tepat waktu.
+-- Kasir: paket di luar jadwal ditolak (A-24). Webhook: tetap diterima (sudah dibayar), ditandai diLuarJadwal
+-- (dinilai pada waktu pesanan masuk).
 
 -- Cadangan: menu yang terlanjur dibuat langsung di aplikasi → isi menurut resep kasir, misalnya
 -- "Paket Berdua" = 1 Thai Tea Regular + 1 Kopi Susu Regular. Harga paket dibagi sebanding harga kasir

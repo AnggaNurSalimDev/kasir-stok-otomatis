@@ -300,6 +300,43 @@ describe('paket khusus aplikasi (dirancang di kasir)', () => {
   });
 });
 
+describe('jadwal promo paket', () => {
+  // Waktu uji: Selasa 3 Nov 2026 08.00 WIB.
+  const ambil = async (id) => (await panggil('/paket')).find((p) => p.id === id);
+  const bodyDari = (p, ubah = {}) => ({ nama: p.nama, isi: p.isi.map(({ menuId, ukuran, qty }) => ({ menuId, ukuran, qty })), hargaSaluran: p.hargaSaluran, aktif: p.aktif, ...ubah });
+
+  it('status dihitung saat diminta: akhir pekan saja → bukan hari ini; liburan → terjadwal; tanpa jadwal → berlaku', async () => {
+    expect(await ambil('bertiga')).toMatchObject({ status: 'bukan_hari', dijual: false, ringkasJadwal: 'Tanpa batas waktu · Jumat, Sabtu, Minggu' });
+    expect(await ambil('liburan')).toMatchObject({ status: 'terjadwal', dijual: false });
+    expect(await ambil('berdua')).toMatchObject({ status: 'berlaku', dijual: true, jadwal: null });
+  });
+
+  it('dicatat di kasir di luar jadwal → ditolak dengan alasan (A-24)', async () => {
+    await buka();
+    const e = await galat(panggil('/transaksi', 'POST', { item: [{ paketId: 'bertiga', qty: 1 }], saluran: 'shopeefood', nomorPesanan: 'SF-J', metodeBayar: 'aplikasi' }));
+    expect(e.perField['item[0].paketId']).toMatch(/tidak berlaku hari ini/);
+  });
+
+  it('pesanan otomatis di luar jadwal tetap bisa diterima (sudah dibayar), tetapi ditandai', async () => {
+    await buka();
+    const harga = (await ambil('bertiga')).hargaSaluran.gofood;
+    const p = await panggil('/integrasi/gofood/pesanan', 'POST', pesanan('F-J', [{ kode: 'paket:bertiga', nama: 'Paket Hemat Bertiga', qty: 1, harga, topping: [] }]));
+    expect(p).toMatchObject({ siapDiterima: true, diLuarJadwal: true });
+    expect((await panggil(`/pesanan-online/${p.id}/terima`, 'POST')).struk.total).toBe(harga);
+  });
+
+  it('jadwal divalidasi; mengubah paket tanpa jadwal menghapus jadwalnya; jadwal yang sedang berlaku → dijual', async () => {
+    const p = await ambil('bertiga');
+    const salah = await galat(panggil('/paket/bertiga', 'PUT', bodyDari(p, { jadwal: { mulai: '2026-11-10T00:00', selesai: '2026-11-01T00:00' } }), 'owner'));
+    expect(salah.perField).toHaveProperty('jadwal.selesai');
+    expect((await galat(panggil('/paket/bertiga', 'PUT', bodyDari(p, { jadwal: { hari: [9] } }), 'owner'))).perField).toHaveProperty('jadwal.hari');
+    expect(await panggil('/paket/bertiga', 'PUT', bodyDari(p), 'owner')).toMatchObject({ jadwal: null, status: 'berlaku' });
+    const selasa = await panggil('/paket/bertiga', 'PUT', bodyDari(p, { jadwal: { mulai: '2026-11-01T00:00', selesai: '2026-11-03T08:00', hari: [2] } }), 'owner');
+    expect(selasa.status).toBe('berakhir'); // selesai tepat 08.00 = sudah berakhir
+    expect((await panggil('/paket/bertiga', 'PUT', bodyDari(p, { jadwal: { mulai: '2026-11-03T07:59', hari: [2] } }), 'owner')).dijual).toBe(true);
+  });
+});
+
 describe('pesanan contoh', () => {
   it('total = jumlah item, kode sinkron menu kasir, nomor berawalan per aplikasi', () => {
     const k = buatKatalog();

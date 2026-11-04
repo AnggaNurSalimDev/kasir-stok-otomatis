@@ -16,8 +16,15 @@ import { penyimpananObjek } from './penyimpanan.js';
 import { KATALOG } from './katalog/index.js';
 import { buatPesananContoh, nomorPesanan } from './pesananContoh.js';
 import { hargaImpas } from '../../../../logika/saluran.js';
+import { statusPaket, waktuLokal } from '../../../../logika/jadwal.js';
+
+const ZONA = 'Asia/Jakarta';
+// Tanggal lokal n hari dari sekarang + jam → "YYYY-MM-DDTHH:mm"
+const tanggalRelatif = (sekarang, n, jam) => `${waktuLokal(new Date(sekarang.getTime() + n * 86400000).toISOString(), ZONA).waktu.slice(0, 10)}T${jam}`;
 
 const MODAL_LACI = 200000;
+// Paket yang dijual pada jam itu (jadwal promo), untuk pesanan contoh.
+const paketBerlaku = (paket, jam) => paket.map((p) => ({ ...p, dijual: statusPaket(p, jam.toISOString(), ZONA).dijual }));
 // Satuan yang dihitung pas (tidak ada takaran yang meleset).
 const SATUAN_HITUNGAN = new Set(['pcs', 'keping', 'butir', 'lembar', 'buah']);
 
@@ -33,9 +40,12 @@ export function buatKatalog(usaha = 'teh', sekarang = new Date()) {
   const topping = structuredClone(k.topping).map((t) => ({ ...t, hargaSaluran: hargaSaluran(t.harga) }));
   // Paket promo: harga isi di toko dikurangi 10%, lalu impas komisi. Hanya dijual di aplikasi.
   const hargaToko = (mId, uk) => menu.find((m) => m.id === mId).ukuran.find((u) => u.nama === uk).harga;
-  const paket = structuredClone(k.paket ?? []).map((p) => {
+  const paket = structuredClone(k.paket ?? []).map(({ jadwalRelatif, ...p }) => {
     const promo = Math.round(p.isi.reduce((a, i) => a + hargaToko(i.menuId, i.ukuran) * i.qty, 0) * 0.9);
-    return { ...p, hargaSaluran: hargaSaluran(promo), aktif: true };
+    const jadwal = jadwalRelatif
+      ? { mulai: tanggalRelatif(sekarang, jadwalRelatif.mulaiHari, '00:00'), selesai: tanggalRelatif(sekarang, jadwalRelatif.selesaiHari, '23:59') }
+      : p.jadwal ?? null;
+    return { ...p, hargaSaluran: hargaSaluran(promo), aktif: true, jadwal };
   });
   const sejak = new Date(sekarang.getTime() - 40 * 86400000).toISOString();
   return {
@@ -216,7 +226,7 @@ export async function buatDataDemo({ sekarang = new Date(), hari = 30, benih = 2
       const saluran = r < 0.7 ? 'toko' : r < 0.82 ? 'gofood' : r < 0.92 ? 'grabfood' : 'shopeefood';
 
       if (saluran === 'gofood' || saluran === 'grabfood') {
-        const pesanan = buatPesananContoh({ menu: katalog.menu, topping: katalog.topping, paket: katalog.paket, saluran, nomor: ++nomorUrut, acak });
+        const pesanan = buatPesananContoh({ menu: katalog.menu, topping: katalog.topping, paket: paketBerlaku(katalog.paket, jam), saluran, nomor: ++nomorUrut, acak });
         const masuk = await panggil(`/integrasi/${saluran}/pesanan`, 'POST', pesanan, oleh);
         maju(1);
         if (khusus.tolakOnline && !sudahTolak) {
@@ -241,7 +251,7 @@ export async function buatDataDemo({ sekarang = new Date(), hari = 30, benih = 2
         }
         if (saluran === 'shopeefood') {
           // Sebagian pesanan ShopeeFood memakai paket kasir (dicatat manual dari tablet).
-          const pk = katalog.paket.filter((p) => p.aktif && Number.isInteger(p.hargaSaluran.shopeefood));
+          const pk = katalog.paket.filter((p) => statusPaket(p, jam.toISOString(), ZONA).dijual && Number.isInteger(p.hargaSaluran.shopeefood));
           if (pk.length && acak() < 0.25) item.push({ paketId: pilih(pk).id, qty: 1 });
           await panggil('/transaksi', 'POST', { item, saluran, nomorPesanan: nomorPesanan('shopeefood', ++nomorUrut), metodeBayar: 'aplikasi' }, oleh);
         } else {
@@ -273,9 +283,9 @@ export async function buatDataDemo({ sekarang = new Date(), hari = 30, benih = 2
     if (hariIniTerbuka) {
       // Dua pesanan baru saja masuk dan belum diterima; satu berisi menu yang dibuat langsung di aplikasi.
       jam = new Date(sekarang.getTime() - 3 * 60000);
-      await panggil('/integrasi/gofood/pesanan', 'POST', buatPesananContoh({ menu: katalog.menu, topping: katalog.topping, paket: katalog.paket, saluran: 'gofood', nomor: ++nomorUrut, acak }), oleh);
+      await panggil('/integrasi/gofood/pesanan', 'POST', buatPesananContoh({ menu: katalog.menu, topping: katalog.topping, paket: paketBerlaku(katalog.paket, jam), saluran: 'gofood', nomor: ++nomorUrut, acak }), oleh);
       jam = new Date(sekarang.getTime() - 60000);
-      await panggil('/integrasi/grabfood/pesanan', 'POST', buatPesananContoh({ menu: katalog.menu, topping: katalog.topping, paket: katalog.paket, saluran: 'grabfood', nomor: ++nomorUrut, acak, tidakDikenal: true }), oleh);
+      await panggil('/integrasi/grabfood/pesanan', 'POST', buatPesananContoh({ menu: katalog.menu, topping: katalog.topping, paket: paketBerlaku(katalog.paket, jam), saluran: 'grabfood', nomor: ++nomorUrut, acak, tidakDikenal: true }), oleh);
     }
     if (khusus.kasHilang) kasLaci -= khusus.kasHilang;
     const trxShift = st().transaksi.filter((t) => t.shiftId === st().shift.at(-1).id);

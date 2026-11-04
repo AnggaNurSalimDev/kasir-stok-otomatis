@@ -91,7 +91,10 @@ export default {
   // Paket promo khusus aplikasi (harga di aplikasi dibuat saat katalog disiapkan).
   paket: [
     { id: 'berdua', nama: 'Paket Berdua', isi: [{ menuId: 'thaiTea', ukuran: 'Regular', qty: 1 }, { menuId: 'kopiSusu', ukuran: 'Regular', qty: 1 }] },
-    { id: 'bertiga', nama: 'Paket Hemat Bertiga', isi: [{ menuId: 'thaiTea', ukuran: 'Regular', qty: 2 }, { menuId: 'greenThaiTea', ukuran: 'Regular', qty: 1 }] },
+    // Promo akhir pekan: hanya Jumat, Sabtu, Minggu.
+    { id: 'bertiga', nama: 'Paket Hemat Bertiga', isi: [{ menuId: 'thaiTea', ukuran: 'Regular', qty: 2 }, { menuId: 'greenThaiTea', ukuran: 'Regular', qty: 1 }], jadwal: { hari: [5, 6, 0] } },
+    // Promo yang sudah dijadwalkan tapi belum mulai (tanggal dihitung dari hari demo dibuka).
+    { id: 'liburan', nama: 'Paket Liburan Sekolah', isi: [{ menuId: 'coklat', ukuran: 'Regular', qty: 2 }, { menuId: 'matchaLatte', ukuran: 'Regular', qty: 1 }], jadwalRelatif: { mulaiHari: 5, selesaiHari: 19 } },
   ],
   // Stok fisik awal (satuan dasar).
   fisikAwal: {

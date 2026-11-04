@@ -159,6 +159,7 @@ function KartuPesanan({ p, adaShift, peran, onSelesai }) {
         ))}
       </ul>
       {p.catatan && <p><small>Catatan: {p.catatan}</small></p>}
+      {p.diLuarJadwal && <p><small className="teks-galat">⚠ Paket dipesan di luar jadwal promo. Tetap bisa diterima karena sudah dibayar di aplikasi{peran === 'owner' ? '; cek apakah menu di aplikasi sudah ikut diperbarui.' : '.'}</small></p>}
       <div className="baris-total"><span>Total di aplikasi</span><strong>{formatRupiah(p.total)}</strong></div>
       {p.hargaBerbeda && peran === 'owner' && <p className="bantuan">Harga di aplikasi berbeda dengan harga {p.namaSaluran} di kasir. Yang dicatat: harga dari aplikasi (yang dibayar pelanggan).</p>}
       {tolak ? (

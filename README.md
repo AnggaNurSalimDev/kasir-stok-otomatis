@@ -34,7 +34,7 @@ Di aplikasi ini **crew tidak pernah menghitung satuan**. Owner menulis resep sek
 - **Detail shift**: `seharusnya = awal + masuk − pakai`, `selisih = akhir − seharusnya`, dengan status *wajar* / *perlu dicek* berdasarkan toleransi per bahan.
 - **Bahan & satuan**: satuan dasar bebas, satuan bantu dengan konversi wajib (sendok, garis gelas, karung, panci), toleransi, saran toleransi dari riwayat 10+ shift.
 - **Menu & resep**: resep per ukuran dengan hasil konversi langsung di setiap baris, harga per aplikasi (kosong = harga toko).
-- **Paket promo khusus aplikasi** dirancang di kasir (isi = beberapa menu kasir, harga per aplikasi). Paket dikirim ke aplikasi dengan kode dari kasir, jadi pesanannya langsung dikenali, dan tidak muncul untuk pesanan di toko. Di struk tampil satu baris "1× Paket Berdua" dengan isinya.
+- **Paket promo khusus aplikasi** dirancang di kasir (isi = beberapa menu kasir, harga per aplikasi). Paket dikirim ke aplikasi dengan kode dari kasir, jadi pesanannya langsung dikenali, dan tidak muncul untuk pesanan di toko. Di struk tampil satu baris "1× Paket Berdua" dengan isinya. Paket bisa **dijadwalkan** (mulai, selesai, hanya hari tertentu); di luar jadwal paket tidak bisa dipilih di kasir.
 - **Aplikasi online** (tiga tab):
   - *Sambungan*: sambungkan/putuskan per aplikasi, perkiraan komisi.
   - *Harga di aplikasi*: satu tabel untuk semua menu, dengan tombol "saran impas" (harga ÷ (1 − komisi), supaya bersihnya sama dengan di toko) dan tanda ⚠ untuk harga yang bersihnya lebih kecil dari harga toko.

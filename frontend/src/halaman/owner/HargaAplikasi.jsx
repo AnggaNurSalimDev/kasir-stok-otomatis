@@ -22,7 +22,7 @@ function barisDari(menu, topping, paket = []) {
   return [
     ...menu.flatMap((m) => m.ukuran.map((u) => ({ kunci: `m|${m.id}|${u.nama}`, jenis: 'menu', id: m.id, nama: m.nama, ukuran: u.nama, kategori: m.kategori, harga: u.harga, nilai: nilaiDari(u) }))),
     ...topping.map((t) => ({ kunci: `t|${t.id}`, jenis: 'topping', id: t.id, nama: t.nama, ukuran: null, kategori: 'Topping', harga: t.harga, nilai: nilaiDari(t) })),
-    ...paket.map((p) => ({ kunci: `p|${p.id}`, jenis: 'paket', id: p.id, nama: p.nama, ukuran: null, kategori: 'Paket promo (khusus aplikasi)', harga: p.hargaIsiToko, nilai: nilaiDari(p), aktif: p.aktif })),
+    ...paket.map((p) => ({ kunci: `p|${p.id}`, jenis: 'paket', id: p.id, nama: p.nama, ukuran: null, kategori: 'Paket promo (khusus aplikasi)', harga: p.hargaIsiToko, nilai: nilaiDari(p), aktif: p.aktif, ringkasJadwal: p.ringkasJadwal })),
   ];
 }
 
@@ -166,7 +166,7 @@ export default function HargaAplikasi({ saluran }) {
               return [
                 judul && <tr key={`k-${b.kategori}`} className="baris-kategori"><td colSpan={2 + kolom.length}>{b.kategori}</td></tr>,
                 <tr key={b.kunci}>
-                  <td>{b.nama}{b.ukuran && <small> {b.ukuran}</small>}{b.jenis === 'paket' && !b.aktif && <small className="teks-redup"> (nonaktif)</small>}</td>
+                  <td>{b.nama}{b.ukuran && <small> {b.ukuran}</small>}{b.jenis === 'paket' && <small className="teks-redup">{!b.aktif ? ' (nonaktif)' : ''}<br />{b.ringkasJadwal}</small>}</td>
                   <td className="kanan">{b.jenis === 'paket' ? <small className="teks-redup">isi di toko<br />{formatRupiah(b.harga)}</small> : formatRupiah(b.harga)}</td>
                   {kolom.map((s) => {
                     const teks = b.nilai[s.id];

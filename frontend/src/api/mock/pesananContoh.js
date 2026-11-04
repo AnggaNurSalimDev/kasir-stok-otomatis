@@ -42,7 +42,8 @@ export function buatPesananContoh({ menu, topping, paket = [], saluran, nomor, a
     });
   }
   // Paket kasir yang dijual di aplikasi ini (dikirim ke aplikasi saat sinkron menu, jadi kodenya dikenali).
-  const paketDijual = paket.filter((p) => p.aktif && Number.isInteger(p.hargaSaluran?.[saluran]));
+  // dijual: dari GET /paket (status jadwal saat ini); pembuat data demo menyaring sendiri menurut jamnya.
+  const paketDijual = paket.filter((p) => p.aktif && p.dijual !== false && Number.isInteger(p.hargaSaluran?.[saluran]));
   if (paketDijual.length && (denganPaket ?? acak() < 0.25)) {
     const p = pilih(paketDijual);
     item.push({ kode: kodePaket(p.id), nama: p.nama, qty: 1, harga: p.hargaSaluran[saluran], topping: [] });

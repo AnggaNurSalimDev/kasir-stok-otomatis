@@ -228,6 +228,11 @@ export default function Kasir() {
   const topping = useData('/topping');
   const saluranData = useData('/saluran');
   const paketData = useData('/paket');
+  const muatPaket = paketData.muatUlang;
+  useEffect(() => {
+    const t = setInterval(muatPaket, 60000);
+    return () => clearInterval(t);
+  }, [muatPaket]);
   const [saluran, setSaluran] = useState('toko');
   const [kategori, setKategori] = useState(null);
   const [pilih, setPilih] = useState(null); // menu yang sedang dipilih ukuran/topping-nya
@@ -249,7 +254,8 @@ export default function Kasir() {
   const toppingById = new Map(topping.data.map((t) => [t.id, t]));
   const paketById = new Map(paketData.data.map((p) => [p.id, p]));
   // Paket promo hanya dijual di aplikasi: muncul sebagai tab "Paket" saat saluran aplikasi dipilih.
-  const paketDijual = saluran === 'toko' ? [] : paketData.data.filter((p) => p.aktif && Number.isInteger(p.hargaSaluran[saluran]));
+  // dijual = sesuai jadwal promo saat data dimuat (dimuat ulang tiap menit; server tetap memeriksa saat menyimpan).
+  const paketDijual = saluran === 'toko' ? [] : paketData.data.filter((p) => p.dijual && Number.isInteger(p.hargaSaluran[saluran]));
   const daftarKategori = [...(paketDijual.length ? [TAB_PAKET] : []), ...new Set(menu.data.map((m) => m.kategori))];
   const aktif = daftarKategori.includes(kategori) ? kategori : daftarKategori[0];
   const totalTampil = total(keranjang, menuById, toppingById, saluran, paketById);
@@ -312,7 +318,7 @@ export default function Kasir() {
                       <>
                         <strong>{pk?.nama ?? it.paketId}</strong>
                         {pk && <><br /><small>{pk.isi.map((x) => `${x.qty}× ${x.nama} ${x.ukuran}`).join(' + ')}</small></>}
-                        {h === null && <><br /><small className="teks-galat">{saluran === 'toko' ? 'Paket hanya untuk pesanan aplikasi' : `Tidak dijual di ${NAMA_SALURAN[saluran]}`}, hapus item ini</small></>}
+                        {h === null && <><br /><small className="teks-galat">{saluran === 'toko' ? 'Paket hanya untuk pesanan aplikasi' : pk && !pk.dijual ? 'Di luar jadwal promo' : `Tidak dijual di ${NAMA_SALURAN[saluran]}`}, hapus item ini</small></>}
                       </>
                     ) : (
                       <>

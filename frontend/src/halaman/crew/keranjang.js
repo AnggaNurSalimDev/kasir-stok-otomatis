@@ -40,7 +40,7 @@ export function ubahQty(keranjang, kunci, qty) {
 export function hargaSatuan(item, menuById, toppingById, saluran = 'toko', paketById = new Map()) {
   if (item.paketId) {
     const p = paketById.get(item.paketId);
-    const h = saluran === 'toko' || !p?.aktif ? undefined : p.hargaSaluran?.[saluran];
+    const h = saluran === 'toko' || !p?.aktif || p.dijual === false ? undefined : p.hargaSaluran?.[saluran];
     return Number.isInteger(h) ? h : null;
   }
   const menu = menuById.get(item.menuId);

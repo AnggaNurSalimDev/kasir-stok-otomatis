@@ -21,6 +21,7 @@ import {
   buatPenyesuaian, hitungKas, saranToleransi,
 } from '../../../../logika/shift.js';
 import { SALURAN_ONLINE, NAMA_SALURAN, adalahOnline, hargaDi, perkiraanKomisi, cocokkanItem, normalkanPemetaan, bagiHarga } from '../../../../logika/saluran.js';
+import { statusPaket, ringkasJadwal } from '../../../../logika/jadwal.js';
 
 const H = dariX10;
 const galat = (status, kode, pesan, detail) => new ErrorApi(status, kode, pesan, detail);
@@ -96,8 +97,12 @@ function tampilPesanan(st, p) {
     const paketKasir = cocok.paketId ? st.paket.find((x) => x.id === cocok.paketId) : null;
     // Pembanding harga: paket kasir → harga paket di saluran itu; menu sinkron → harga menu; pemetaan → tidak ada pembanding.
     const hargaKasir = paketKasir ? paketKasir.hargaSaluran[p.saluran] : dipetakan ? undefined : hargaKasirIsi(st, cocok.isi, p.saluran)[0];
+    // Pesanan otomatis sudah dibayar pelanggan, jadi tetap bisa diterima; owner diberi tanda jika di luar jadwal promo
+    // (dinilai pada saat pesanan masuk, bukan saat diterima).
+    const jadwal = paketKasir ? statusPaket(paketKasir, p.masukPada, st.pengaturan.zonaWaktu) : null;
     return {
       kode: it.kode, nama: it.nama, qty: it.qty, harga: it.harga, topping: it.topping, masalah: null, isiKasir,
+      diLuarJadwal: jadwal ? !jadwal.dijual : false,
       sumber: paketKasir ? 'paket' : dipetakan ? 'pemetaan' : 'menu',
       hargaBerbeda: hargaKasir !== undefined && hargaKasir !== it.harga,
     };
@@ -106,7 +111,7 @@ function tampilPesanan(st, p) {
   return {
     id: p.id, saluran: p.saluran, namaSaluran: NAMA_SALURAN[p.saluran], nomorPesanan: p.nomorPesanan, pelanggan: p.pelanggan,
     catatan: p.catatan ?? null, total: p.total, masukPada: p.masukPada, status: p.status,
-    item, siapDiterima: item.every((i) => !i.masalah), hargaBerbeda: item.some((i) => i.hargaBerbeda),
+    item, siapDiterima: item.every((i) => !i.masalah), hargaBerbeda: item.some((i) => i.hargaBerbeda), diLuarJadwal: item.some((i) => i.diLuarJadwal),
     diprosesOleh: namaPengguna(st, p.diprosesOleh), diprosesPada: p.diprosesPada, alasan: p.alasan ?? null,
     transaksiId: p.transaksiId ?? null, batal: trx?.batal ? { pada: trx.batal.pada, alasan: trx.batal.alasan, sumber: trx.batal.sumber } : null,
   };
@@ -494,33 +499,44 @@ function periksaPaket(st, body) {
   if (detail.length) throw validasi('Paket tidak valid', detail);
 }
 
-const tampilPaket = (st, p) => ({
+const ALASAN_TIDAK_DIJUAL = {
+  nonaktif: 'sudah dinonaktifkan',
+  terjadwal: 'promonya belum mulai',
+  berakhir: 'promonya sudah berakhir',
+  bukan_hari: 'promonya tidak berlaku hari ini',
+};
+
+const tampilPaket = (st, p, pada) => ({
   ...p,
+  jadwal: p.jadwal ?? null,
+  ...statusPaket(p, pada, st.pengaturan.zonaWaktu), // { status, dijual } saat ini
+  ringkasJadwal: ringkasJadwal(p.jadwal),
   isi: p.isi.map((k) => ({ ...k, nama: st.menu.find((m) => m.id === k.menuId)?.nama ?? k.menuId })),
   // Pembanding untuk owner: harga isi paket jika dibeli terpisah di toko.
   hargaIsiToko: p.isi.reduce((a, k) => a + (st.menu.find((m) => m.id === k.menuId)?.ukuran.find((u) => u.nama === k.ukuran)?.harga ?? 0) * k.qty, 0),
   kode: `paket:${p.id}`,
 });
 
-daftar('GET', '/paket', SEMUA, null, ({ st }) => (st.paket ?? []).map((p) => tampilPaket(st, p)));
+daftar('GET', '/paket', SEMUA, null, ({ st, pada }) => (st.paket ?? []).map((p) => tampilPaket(st, p, pada)));
 
 daftar('POST', '/paket', OWNER, S.PaketBody, (ctx) => {
   const { st, body } = ctx;
   periksaPaket(st, body);
   if ((st.paket ?? []).some((p) => p.nama.trim().toLowerCase() === body.nama.trim().toLowerCase())) throw validasi('Paket tidak valid', [{ field: 'nama', pesan: `Paket "${body.nama}" sudah ada` }]);
-  const p = { id: ctx.id('paket'), ...body };
+  const p = { id: ctx.id('paket'), ...body, jadwal: body.jadwal ?? null };
   st.paket = [...(st.paket ?? []), p];
   ctx.status = 201;
-  return tampilPaket(st, p);
+  return tampilPaket(st, p, ctx.pada);
 });
 
-daftar('PUT', '/paket/:id', OWNER, S.PaketBody, ({ st, body, params }) => {
+daftar('PUT', '/paket/:id', OWNER, S.PaketBody, ({ st, body, params, pada }) => {
   const p = (st.paket ?? []).find((x) => x.id === params.id);
   if (!p) throw tidakAda('Paket');
   periksaPaket(st, body);
   if (st.paket.some((x) => x.id !== p.id && x.nama.trim().toLowerCase() === body.nama.trim().toLowerCase())) throw validasi('Paket tidak valid', [{ field: 'nama', pesan: `Paket "${body.nama}" sudah ada` }]);
-  Object.assign(p, body); // transaksi lama punya salinan item dan pemakaian sendiri (A-07)
-  return tampilPaket(st, p);
+  // jadwal ditulis eksplisit: body tanpa jadwal berarti jadwalnya dihapus, bukan dibiarkan yang lama.
+  Object.assign(p, { ...body, jadwal: body.jadwal ?? null }); // transaksi lama punya salinan item dan pemakaian sendiri (A-07)
+  return tampilPaket(st, p, pada);
 });
 
 daftar('POST', '/topping', OWNER, S.ToppingBody, (ctx) => {
@@ -734,14 +750,14 @@ daftar('POST', '/transaksi', SEMUA, S.TransaksiBody, (ctx) => {
     if (setel.mode === 'otomatis') throw konflik(`Pesanan ${nama} masuk otomatis. Terima di halaman Pesanan online.`);
     if (nomorDipakai(st, body.saluran, body.nomorPesanan)) throw konflik(`Pesanan ${nama} nomor ${body.nomorPesanan} sudah tercatat.`);
   }
-  const { trx, peringatanMinus } = catatTransaksi(ctx, { ...uraikanKeranjang(st, body.item, body.saluran), saluran: body.saluran, nomorPesanan: body.nomorPesanan ?? null, metodeBayar: body.metodeBayar, uangDiterima: body.uangDiterima });
+  const { trx, peringatanMinus } = catatTransaksi(ctx, { ...uraikanKeranjang(st, body.item, body.saluran, ctx.pada), saluran: body.saluran, nomorPesanan: body.nomorPesanan ?? null, metodeBayar: body.metodeBayar, uangDiterima: body.uangDiterima });
   ctx.status = 201;
   return tampilStruk(st, trx, peringatanMinus);
 });
 
 // Keranjang kasir → item menu. Paket (khusus aplikasi) diurai jadi menu isinya; harga paket dibagi sebanding
 // harga kasir supaya total = harga paket. Tanpa paket: harga dihitung biasa (hargaItem null).
-function uraikanKeranjang(st, itemBody, saluran) {
+function uraikanKeranjang(st, itemBody, saluran, pada) {
   if (!itemBody.some((it) => it.paketId)) return { item: itemBody };
   const detail = [];
   const item = [];
@@ -761,7 +777,10 @@ function uraikanKeranjang(st, itemBody, saluran) {
       return;
     }
     const paket = st.paket.find((p) => p.id === it.paketId);
-    if (!paket || !paket.aktif) return detail.push({ field: `item[${i}].paketId`, pesan: 'Paket tidak ditemukan atau sudah nonaktif' });
+    if (!paket) return detail.push({ field: `item[${i}].paketId`, pesan: 'Paket tidak ditemukan' });
+    // A-24: pesanan yang dicatat di kasir mengikuti jadwal promo saat dicatat.
+    const { status, dijual } = statusPaket(paket, pada, st.pengaturan.zonaWaktu);
+    if (!dijual) return detail.push({ field: `item[${i}].paketId`, pesan: `${paket.nama}: ${ALASAN_TIDAK_DIJUAL[status]}` });
     if (saluran === 'toko') return detail.push({ field: `item[${i}].paketId`, pesan: `${paket.nama} hanya dijual di aplikasi` });
     const harga = paket.hargaSaluran[saluran];
     if (!Number.isInteger(harga)) return detail.push({ field: `item[${i}].paketId`, pesan: `${paket.nama} tidak dijual di ${NAMA_SALURAN[saluran]}` });
@@ -883,7 +902,7 @@ daftar('DELETE', '/saluran/:id/pemetaan/:kode', OWNER, null, ({ st, params }) =>
 });
 
 // Harga aplikasi untuk semua menu sekaligus. Atomik: satu menu/ukuran salah → tidak ada yang tersimpan.
-daftar('PUT', '/harga-saluran', OWNER, S.HargaSaluranMassalBody, ({ st, body }) => {
+daftar('PUT', '/harga-saluran', OWNER, S.HargaSaluranMassalBody, ({ st, body, pada }) => {
   const detail = [];
   body.menu.forEach((m, i) => {
     const menu = st.menu.find((x) => x.id === m.id);
@@ -906,7 +925,7 @@ daftar('PUT', '/harga-saluran', OWNER, S.HargaSaluranMassalBody, ({ st, body }) 
     else pk.hargaSaluran = x.hargaSaluran;
   });
   if (detail.length) throw validasi('Harga tidak tersimpan', detail); // salinan kerja dibuang: tidak ada yang berubah
-  return { menu: st.menu, topping: st.topping, paket: (st.paket ?? []).map((p) => tampilPaket(st, p)) };
+  return { menu: st.menu, topping: st.topping, paket: (st.paket ?? []).map((p) => tampilPaket(st, p, pada)) };
 });
 
 // Pintu masuk pesanan dari aplikasi (webhook). Di mock dipanggil tombol "kirim pesanan contoh" dan pembuat data demo.
