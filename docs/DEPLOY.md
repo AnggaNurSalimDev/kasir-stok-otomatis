@@ -24,6 +24,17 @@ GitHub (main) ──push──▶ Vercel build: npm ci → npm run build → dis
 
 Setiap push ke `main` akan dideploy ulang otomatis. Variabel `VITE_*` dibaca saat build, jadi mengubahnya butuh **Redeploy**.
 
+## Satu repo = satu proyek Vercel
+
+Alamat demo: **https://kasir-stok-otomatis.vercel.app** (proyek Vercel `kasir-stok-otomatis`).
+
+Repo ini pernah ter-import 3 kali, sehingga ada 3 proyek Vercel (`kasir-stok-otomatis`, `-yr3j`, `-crsk`) yang membangun commit yang sama. Vercel menambahkan akhiran acak (`-yr3j`) kalau nama proyek sudah dipakai. Jadi **alamat dengan akhiran acak adalah tanda repo sudah pernah di-import**.
+
+- Repo ini **sudah** di-import. Jangan pilih **Add New → Project** untuk repo ini lagi.
+- Build gagal → perbaiki lalu push, atau buka proyeknya → Deployments → **Redeploy**. Jangan import ulang.
+- Ingin mengganti alamat → proyeknya → Settings → **Domains**, bukan membuat proyek baru.
+- Sebelum import repo mana pun, cari dulu nama repo di daftar Projects Vercel.
+
 ## Uji setelah deploy
 
 - [ ] Halaman masuk tampil dengan logo dan warna Teh Senja.

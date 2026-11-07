@@ -2,9 +2,9 @@
 
 Web kasir untuk kedai minuman dan warung makan yang **mengurangi stok bahan otomatis sesuai resep, apa pun satuannya**: gram, ml, sendok, garis gelas, porsi, butir, atau pcs.
 
-> **Demo:** https://kasir-stok-otomatis-yr3j.vercel.app · data contoh di browser, tanpa login sungguhan · pilih nama untuk masuk
+> **Demo:** https://kasir-stok-otomatis.vercel.app · data contoh di browser, tanpa login sungguhan · pilih nama untuk masuk
 >
-> Langsung ke usaha tertentu: [Teh Senja](https://kasir-stok-otomatis-yr3j.vercel.app/?profil=teh-senja) · [Kopi Lintas](https://kasir-stok-otomatis-yr3j.vercel.app/?profil=kopi-lintas) (tema gelap) · [Dapur Mie Rasa](https://kasir-stok-otomatis-yr3j.vercel.app/?profil=dapur-mie-rasa)
+> Langsung ke usaha tertentu: [Teh Senja](https://kasir-stok-otomatis.vercel.app/?profil=teh-senja) · [Kopi Lintas](https://kasir-stok-otomatis.vercel.app/?profil=kopi-lintas) (tema gelap) · [Dapur Mie Rasa](https://kasir-stok-otomatis.vercel.app/?profil=dapur-mie-rasa)
 
 ![Tiga usaha contoh: Teh Senja, Kopi Lintas (tema gelap), Dapur Mie Rasa](docs/gambar/tiga-usaha-kasir.png)
 
